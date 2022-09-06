@@ -7,13 +7,6 @@
 #include "misc.h"
 #include "vflash.h"
 
-// joe printf
-#define va_args(...)        , ##__VA_ARGS__
-#define jprintf(fmt, ...) \
-    do { \
-        printf("%s [LINE %d] : " fmt, __func__, __LINE__ va_args(__VA_ARGS__)); \
-    } while(0)
-
 static void vunit_reverse(VUNIT_TYPE *vu)
 {
     if (!vu) { return; }
@@ -34,16 +27,16 @@ static void vunit_reverse(VUNIT_TYPE *vu)
 vpage *vpage_dupc(vpage *page)
 {
     if (!page) {
-        jprintf("invaild args.\n");
+        PRINT_ERR("invaild args.\n");
         return NULL;
     }
 
     vpage *page_new = vpage_new();
     if (!page_new) {
-        jprintf("page new failed\n");
+        PRINT_ERR("page new failed\n");
         return NULL;
     } else if (page_new->init(page_new, page->vunit_amt)) {
-        jprintf("page init failed\n");
+        PRINT_ERR("page init failed\n");
         page_new->destroy(page_new);
         return NULL;
     }
@@ -55,7 +48,7 @@ vpage *vpage_dupc(vpage *page)
 int vpage_dump(vpage *page, int unit_per_line)
 {
     if (!page || !unit_per_line) {
-        jprintf("invaild args.\n");
+        PRINT_ERR("invaild args.\n");
         return -1;
     }
 
@@ -97,7 +90,7 @@ int vpage_dump(vpage *page, int unit_per_line)
 int vpage_dump_read(vpage *page, int unit_per_line)
 {
     if (!page || !unit_per_line) {
-        jprintf("invaild args.\n");
+        PRINT_ERR("invaild args.\n");
         return -1;
     }
 
@@ -152,7 +145,7 @@ int vpage_dump_read(vpage *page, int unit_per_line)
 int vpage_info(vpage *page, int unit_per_line)
 {
     if (!page || !unit_per_line) {
-        jprintf("invaild args.\n");
+        PRINT_ERR("invaild args.\n");
         return -1;
     }
 
@@ -203,7 +196,7 @@ int vpage_info(vpage *page, int unit_per_line)
 int vpage_erase(vpage *page)
 {
     if (!page) {
-        jprintf("invalid args\n");
+        PRINT_ERR("invalid args\n");
         return -1;
     }
 
@@ -218,10 +211,10 @@ int vpage_erase(vpage *page)
 int vpage_read(vpage *page, int off, unsigned char *buffer, int size)
 {
     if (!page || !buffer || !size) {
-        jprintf("invalid args\n");
+        PRINT_ERR("invalid args\n");
         return -1;
     } else if ((off + size) > page->size(page)) {
-        jprintf("overflow \n");
+        PRINT_ERR("overflow \n");
         return -1;
     }
 
@@ -270,10 +263,10 @@ int vpage_read(vpage *page, int off, unsigned char *buffer, int size)
 int vpage_write(vpage *page, int off, const unsigned char *buffer, int size)
 {
     if (!page || !buffer || !size) {
-        jprintf("invalid args\n");
+        PRINT_ERR("invalid args\n");
         return -1;
     } else if ((off + size) > page->size(page)) {
-        jprintf("overflow \n");
+        PRINT_ERR("overflow \n");
         return -1;
     }
 
@@ -338,7 +331,7 @@ int vpage_size(vpage *page)
 int vpage_init(vpage *page, int vunit_amt)
 {
     if (!page || !vunit_amt) {
-        jprintf("invaild args.\n");
+        PRINT_ERR("invaild args.\n");
         return -1;
     }
 
@@ -346,7 +339,7 @@ int vpage_init(vpage *page, int vunit_amt)
     page->vunit_amt = vunit_amt;
     page->vunit = (vunit *)malloc(sizeof(vunit) * vunit_amt);
     if (!page->vunit) {
-        jprintf("page new unit failed\n");
+        PRINT_ERR("page new unit failed\n");
         return -1;
     }
 
@@ -363,7 +356,7 @@ int vpage_init(vpage *page, int vunit_amt)
 int vpage_destroy(vpage *page)
 {
     if (!page) {
-        jprintf("invaild args.\n");
+        PRINT_ERR("invaild args.\n");
         return -1;
     } else if (!page->vunit) {
         return 0;
@@ -381,7 +374,7 @@ vpage *vpage_new(void)
 {
     vpage *page = (vpage *)malloc(sizeof(vpage));
     if (!page) {
-        jprintf("allocate failed\n");
+        PRINT_ERR("allocate failed\n");
         return NULL;
     }
     memset(page, 0, sizeof(vpage));
@@ -406,10 +399,10 @@ vpage *vpage_new(void)
 vpage *vblock_get_page(vblock *block, int page_num)
 {
     if (!block || (page_num >= block->vpage_amt)) {
-        jprintf("invalid args\n");
+        PRINT_ERR("invalid args\n");
         return NULL;
     } else if (!block->vpage) {
-        jprintf("no init\n");
+        PRINT_ERR("no init\n");
         return NULL;
     }
 
@@ -418,7 +411,7 @@ vpage *vblock_get_page(vblock *block, int page_num)
 int vblock_erase(vblock *block)
 {
     if (!block) {
-        jprintf("invalid args\n");
+        PRINT_ERR("invalid args\n");
         return -1;
     }
     for (int idx = 0; idx < block->vpage_amt; ++idx)
@@ -436,10 +429,10 @@ int vblock_erase(vblock *block)
 int vblock_read(vblock *block, int off, unsigned char *buffer, int size)
 {
     if (!block || !buffer || !size) {
-        jprintf("invalid args\n");
+        PRINT_ERR("invalid args\n");
         return -1;
     } else if ((off + size) > block->size(block)) {
-        jprintf("overflow \n");
+        PRINT_ERR("overflow \n");
         return -1;
     }
 
@@ -473,10 +466,10 @@ int vblock_read(vblock *block, int off, unsigned char *buffer, int size)
 int vblock_write(vblock *block, int off, const unsigned char *buffer, int size)
 {
     if (!block || !buffer || !size) {
-        jprintf("invalid args\n");
+        PRINT_ERR("invalid args\n");
         return -1;
     } else if ((off + size) > block->size(block)) {
-        jprintf("overflow \n");
+        PRINT_ERR("overflow \n");
         return -1;
     }
 
@@ -531,7 +524,7 @@ int vblock_page_size(vblock *block)
 int vblock_info(vblock *block, int unit_per_line)
 {
     if (!block || !unit_per_line) {
-        jprintf("invaild args.\n");
+        PRINT_ERR("invaild args.\n");
         return -1;
     }
 
@@ -588,13 +581,13 @@ int vblock_info(vblock *block, int unit_per_line)
 vblock *vblock_dupc(vblock *block)
 {
     if (!block) {
-        jprintf("invalid args.\n");
+        PRINT_ERR("invalid args.\n");
         return NULL;
     }
 
     vblock *block_new = vblock_new();
     if (!block_new) {
-        jprintf("block new failed\n");
+        PRINT_ERR("block new failed\n");
         return NULL;
     }
 
@@ -604,7 +597,7 @@ vblock *vblock_dupc(vblock *block)
 
     block_new->vpage = (vpage **)malloc(sizeof(vpage *) * block_new->vpage_amt);
     if (!block_new->vpage) {
-        jprintf("block page point allocate failed\n");
+        PRINT_ERR("block page point allocate failed\n");
         block_new->destroy(block_new);
         return NULL;
     }
@@ -613,7 +606,7 @@ vblock *vblock_dupc(vblock *block)
     for (int idx = 0; idx < block->vpage_amt; ++idx) {
         block_new->vpage[idx] = block->vpage[idx]->dupc(block->vpage[idx]);
         if (!block_new->vpage[idx]) {
-            jprintf("page %d dupc failed\n", idx);
+            PRINT_ERR("page %d dupc failed\n", idx);
             block_new->destroy(block_new);
             return NULL;
         }
@@ -624,7 +617,7 @@ vblock *vblock_dupc(vblock *block)
 int vblock_wpage_rdump(vblock *block, int wpage_num, vpage *wpage, int unit_per_line)
 {
     if (!block || !wpage || !unit_per_line) {
-        jprintf("invaild args.\n");
+        PRINT_ERR("invaild args.\n");
         return -1;
     }
 
@@ -791,7 +784,7 @@ int vblock_wpage_rdump(vblock *block, int wpage_num, vpage *wpage, int unit_per_
 int vblock_wpage_dump(vblock *block, int wpage_num, vpage *wpage, int unit_per_line)
 {
     if (!block || !wpage || !unit_per_line) {
-        jprintf("invaild args.\n");
+        PRINT_ERR("invaild args.\n");
         return -1;
     }
 
@@ -915,7 +908,7 @@ int vblock_wpage_dump(vblock *block, int wpage_num, vpage *wpage, int unit_per_l
 int vblock_dump(vblock *block, int unit_per_line)
 {
     if (!block || !unit_per_line) {
-        jprintf("invaild args.\n");
+        PRINT_ERR("invaild args.\n");
         return -1;
     }
 
@@ -965,7 +958,7 @@ int vblock_dump(vblock *block, int unit_per_line)
 int vblock_dump_read(vblock *block, int unit_per_line)
 {
     if (!block || !unit_per_line) {
-        jprintf("invaild args.\n");
+        PRINT_ERR("invaild args.\n");
         return -1;
     }
 
@@ -1029,10 +1022,10 @@ int vblock_dump_read(vblock *block, int unit_per_line)
 int vblock_init(vblock *block, int vpage_amt, int vunit_amt)
 {
     if (!block || !vpage_amt || !vunit_amt) {
-        jprintf("invaild args.\n");
+        PRINT_ERR("invaild args.\n");
         return -1;
     } else if (block->vpage) {
-        jprintf("block page already exist.\n");
+        PRINT_ERR("block page already exist.\n");
         return -1;
     }
 
@@ -1042,7 +1035,7 @@ int vblock_init(vblock *block, int vpage_amt, int vunit_amt)
 
     block->vpage = (vpage **)malloc(sizeof(vpage *) * block->vpage_amt);
     if (!block->vpage) {
-        jprintf("block page point allocate failed\n");
+        PRINT_ERR("block page point allocate failed\n");
         return -1;
     }
     memset(block->vpage, 0, sizeof(vpage *) * block->vpage_amt);
@@ -1050,10 +1043,10 @@ int vblock_init(vblock *block, int vpage_amt, int vunit_amt)
     for (int idx = 0; idx < block->vpage_amt; ++idx) {
         vpage *page = vpage_new();
         if (!page) {
-            jprintf("page new failed\n");
+            PRINT_ERR("page new failed\n");
             return -1;
         } else if (page->init(page, block->vunit_amt)) {
-            jprintf("page inint failed\n");
+            PRINT_ERR("page inint failed\n");
             return -1;
         }
          
@@ -1065,7 +1058,7 @@ int vblock_init(vblock *block, int vpage_amt, int vunit_amt)
 int vblock_destroy(vblock *block)
 {
     if (!block) {
-        jprintf("invaild args.\n");
+        PRINT_ERR("invaild args.\n");
         return -1;
     } else if (!block->vpage_amt) {
         return 0;
@@ -1086,7 +1079,7 @@ vblock *vblock_new(void)
 {
     vblock *block = (vblock *)malloc(sizeof(vblock));
     if (!block) {
-        jprintf("allocate failed\n");
+        PRINT_ERR("allocate failed\n");
         return NULL;
     }
     memset(block, 0, sizeof(vblock));
@@ -1122,17 +1115,17 @@ vblock *vblock_new(void)
 int vflash_config_import(vflash *flash, char *name)
 {
     if (!flash) {
-        jprintf("invaild args.\n");
+        PRINT_ERR("invaild args.\n");
         return -1;
     }
 
     if (access(name, F_OK)) {
-        jprintf("file \"%s\" not exist.\n", name);
+        PRINT_ERR("file \"%s\" not exist.\n", name);
         return -1;
     }
 
     if (flash->vblock) {
-        jprintf("flash was initial.\n");
+        PRINT_ERR("flash was initial.\n");
         return -1;
     }
 
@@ -1144,18 +1137,18 @@ int vflash_config_import(vflash *flash, char *name)
     int head_size = sizeof(unsigned int) * 3;
 
     if (!fd) {
-        jprintf("fopen failed : %s\n", strerror(errno));
+        PRINT_ERR("fopen failed : %s\n", strerror(errno));
         return -1;
     } else if (fseek(fd, 0, SEEK_END)) {
-        jprintf("fseek to end failed : %s\n", strerror(errno));
+        PRINT_ERR("fseek to end failed : %s\n", strerror(errno));
         fclose(fd);
         return -1;
     } else if (ftell(fd) < head_size) {
-        jprintf("config without amount info.\n");
+        PRINT_ERR("config without amount info.\n");
         fclose(fd);
         return -1;
     } else if (fseek(fd, 0, SEEK_SET)) {
-        jprintf("fseek to start failed : %s\n", strerror(errno));
+        PRINT_ERR("fseek to start failed : %s\n", strerror(errno));
         fclose(fd);
         return -1;
     }
@@ -1164,15 +1157,15 @@ int vflash_config_import(vflash *flash, char *name)
     unsigned int amount[3] = {0};
 
     if (fread(amount, sizeof(unsigned int), 3, fd) != 3) {
-        jprintf("fread failed : %s.\n", strerror(errno));
-        jprintf("amount : %d.%d.%d.\n", amount[0], amount[1], amount[2]);
+        PRINT_ERR("fread failed : %s.\n", strerror(errno));
+        PRINT_ERR("amount : %d.%d.%d.\n", amount[0], amount[1], amount[2]);
         fclose(fd);
         return -1;
     }
-    jprintf("amount : %d.%d.%d.\n", amount[0], amount[1], amount[2]);
+    PRINT("amount : %d.%d.%d.\n", amount[0], amount[1], amount[2]);
 
     if (flash->init(flash, amount[0], amount[1], amount[2])) {
-        jprintf("flash init failed .\n");
+        PRINT_ERR("flash init failed .\n");
         fclose(fd);
         return -1;
     }
@@ -1182,16 +1175,16 @@ int vflash_config_import(vflash *flash, char *name)
 
     // have not vunit info is ok , just init to 0
     if (fseek(fd, 0, SEEK_END)) {
-        jprintf("fseek to end failed : %s\n", strerror(errno));
+        PRINT_ERR("fseek to end failed : %s\n", strerror(errno));
         fclose(fd);
         return -1;
     } else if (ftell(fd) != total_size) {
-        jprintf("flash total size mismatch.\n");
-        jprintf("ftell (%ld) != total_size (%ld).\n", ftell(fd), total_size);
+        PRINT_ERR("flash total size mismatch.\n");
+        PRINT_ERR("ftell (%ld) != total_size (%ld).\n", ftell(fd), total_size);
         fclose(fd);
         return -1;
     } else if (fseek(fd, head_size, SEEK_SET)) {
-        jprintf("fseek to head size failed : %s\n", strerror(errno));
+        PRINT_ERR("fseek to head size failed : %s\n", strerror(errno));
         fclose(fd);
         return -1;
     }
@@ -1206,8 +1199,8 @@ int vflash_config_import(vflash *flash, char *name)
             vpage *page = block->vpage[pidx];
 
             if (fread(page->vunit, sizeof(vunit), page->vunit_amt, fd) != page->vunit_amt) {
-                jprintf("fread failed : %s.\n", strerror(errno));
-                jprintf("block %d , page %d : %s.\n", bidx, pidx, strerror(errno));
+                PRINT_ERR("fread failed : %s.\n", strerror(errno));
+                PRINT_ERR("block %d , page %d : %s.\n", bidx, pidx, strerror(errno));
                 return -1;
             }
         }
@@ -1223,16 +1216,16 @@ int vflash_config_import(vflash *flash, char *name)
 int vflash_config_export(vflash *flash, char *name)
 {
     if (!flash) {
-        jprintf("invalid args\n");
+        PRINT_ERR("invalid args\n");
         return -1;
     }
 
     FILE *fd = fopen(name, "wb");
     if (!fd) {
-        jprintf("fopen %s failed : %s\n", name, strerror(errno));
+        PRINT_ERR("fopen %s failed : %s\n", name, strerror(errno));
         return -1;
     } else if (fseek(fd, 0, SEEK_SET)) {
-        jprintf("fseek %s failed : %s\n", name, strerror(errno));
+        PRINT_ERR("fseek %s failed : %s\n", name, strerror(errno));
         return -1;
     }
 
@@ -1244,7 +1237,7 @@ int vflash_config_export(vflash *flash, char *name)
     };
 
     if (fwrite(amount, sizeof(unsigned int), 3, fd) != 3) {
-        jprintf("fwrite failed : %s.\n", strerror(errno));
+        PRINT_ERR("fwrite failed : %s.\n", strerror(errno));
         return -1;
     }
 
@@ -1258,7 +1251,7 @@ int vflash_config_export(vflash *flash, char *name)
             vpage *page = block->vpage[pidx];
 
             if (fwrite(page->vunit, sizeof(vunit), page->vunit_amt, fd) != page->vunit_amt) {
-                jprintf("fwrite failed : %s.\n", strerror(errno));
+                PRINT_ERR("fwrite failed : %s.\n", strerror(errno));
             }
         }
     }
@@ -1325,13 +1318,13 @@ int vflash_config_page_update(vflash *flash, int block, int page)
 int vflash_config_block_update(vflash *flash, int block)
 {
     if (!flash) {
-        jprintf("invalid args\n");
+        PRINT_ERR("invalid args\n");
         return -1;
     } else if (block >= flash->vblock_amt) {
-        jprintf("invalid block number\n");
+        PRINT_ERR("invalid block number\n");
         return -1;
     } else if (!strlen(flash->file_name)) {
-        jprintf("invalid file name, please import or export first.\n");
+        PRINT_ERR("invalid file name, please import or export first.\n");
         return -1;
     }
 
@@ -1340,17 +1333,17 @@ int vflash_config_block_update(vflash *flash, int block)
 
     FILE *fd = fopen(flash->file_name, "r+");
     if (!fd) {
-        jprintf("fopen failed : %s\n", strerror(errno));
+        PRINT_ERR("fopen failed : %s\n", strerror(errno));
         return -1;
     } else if (fseek(fd, block_off, SEEK_SET)) {
-        jprintf("fseek failed : %s\n", strerror(errno));
+        PRINT_ERR("fseek failed : %s\n", strerror(errno));
         fclose(fd);
         return -1;
     }
 
     vblock *wblock = flash->get_block(flash, block);
     if (!wblock) {
-        jprintf("flash get block (%d) failed.\n", block);
+        PRINT_ERR("flash get block (%d) failed.\n", block);
         fclose(fd);
         return -1;
     }
@@ -1361,7 +1354,7 @@ int vflash_config_block_update(vflash *flash, int block)
         vpage *page = wblock->vpage[pidx];
 
         if (fwrite(page->vunit, sizeof(vunit), page->vunit_amt, fd) != page->vunit_amt) {
-            jprintf("fwrite failed : %s.\n", strerror(errno));
+            PRINT_ERR("fwrite failed : %s.\n", strerror(errno));
             fclose(fd);
             return -1;
         }
@@ -1376,16 +1369,16 @@ int vflash_config_block_update(vflash *flash, int block)
 int vflash_file_dump(vflash *flash)
 {
     if (!flash) {
-        jprintf("invalid args\n");
+        PRINT_ERR("invalid args\n");
         return -1;
     }
 
     FILE *fd = fopen("flash.instance", "wb");
     if (!fd) {
-        jprintf("fopen failed : %s\n", strerror(errno));
+        PRINT_ERR("fopen failed : %s\n", strerror(errno));
         return -1;
     } else if (fseek(fd, 0, SEEK_SET)) {
-        jprintf("fseek failed : %s\n", strerror(errno));
+        PRINT_ERR("fseek failed : %s\n", strerror(errno));
         return -1;
     }
 
@@ -1397,10 +1390,10 @@ int vflash_file_dump(vflash *flash)
         memset(wdata, 0, block_size);
         vblock *block = flash->vblock[bidx];
         if (block->read(block, 0, wdata, block_size)) {
-            jprintf("block %d read failed.\n", bidx);
+            PRINT_ERR("block %d read failed.\n", bidx);
             continue;
         } else if (fwrite(wdata, block_size, 1, fd) < 0) {
-            jprintf("fwrite failed : %s.\n", strerror(errno));
+            PRINT_ERR("fwrite failed : %s.\n", strerror(errno));
             continue;
         }
 
@@ -1416,10 +1409,10 @@ int vflash_file_dump(vflash *flash)
 vblock *vflash_get_block(vflash *flash, int block_num)
 {
     if (!flash || (block_num >= flash->vblock_amt)) {
-        jprintf("invalid args\n");
+        PRINT_ERR("invalid args\n");
         return NULL;
     } else if (!flash->vblock) {
-        jprintf("no init.\n");
+        PRINT_ERR("no init.\n");
         return NULL;
     }
 
@@ -1464,12 +1457,12 @@ int vflash_page_size(vflash *flash)
 int vflash_file_load(vflash *flash, char *file)
 {
     if (!flash || !file) {
-        jprintf("invaild args.\n");
+        PRINT_ERR("invaild args.\n");
         return -1;
     }
 
     if (access(file, F_OK)) {
-        jprintf("file not exist.\n");
+        PRINT_ERR("file not exist.\n");
         return -1;
     }
 
@@ -1477,16 +1470,16 @@ int vflash_file_load(vflash *flash, char *file)
     FILE *fd = fopen("flash.instance", "r");
     int load_result = 0;
     if (!fd) {
-        jprintf("fopen failed : %s\n", strerror(errno));
+        PRINT_ERR("fopen failed : %s\n", strerror(errno));
         return -1;
     } else if (fseek(fd, 0, SEEK_END)) {
-        jprintf("fseek to end failed : %s\n", strerror(errno));
+        PRINT_ERR("fseek to end failed : %s\n", strerror(errno));
         load_result = -1;
     } else if (ftell(fd) != flash->size(flash)) {
-        jprintf("file size mismatch.\n");
+        PRINT_ERR("file size mismatch.\n");
         load_result = -1;
     } else if (fseek(fd, 0, SEEK_SET)) {
-        jprintf("fseek to start failed : %s\n", strerror(errno));
+        PRINT_ERR("fseek to start failed : %s\n", strerror(errno));
         load_result = -1;
     } else {
 
@@ -1498,11 +1491,11 @@ int vflash_file_load(vflash *flash, char *file)
             vblock *block = flash->vblock[bidx];
 
             if (fread(rdata, block_size, 1, fd) < 0) {
-                jprintf("fread failed : %s.\n", strerror(errno));
+                PRINT_ERR("fread failed : %s.\n", strerror(errno));
                 load_result = -1;
                 break;
             } else if (block->write(block, 0, rdata, block_size)) {
-                jprintf("block %d read failed.\n", bidx);
+                PRINT_ERR("block %d read failed.\n", bidx);
                 load_result = -1;
                 break;
             }
@@ -1518,7 +1511,7 @@ int vflash_file_load(vflash *flash, char *file)
 int vflash_init(vflash *flash, int vblock_amt, int vpage_amt, int vunit_amt)
 {
     if (!flash || !vblock_amt || !vpage_amt || !vunit_amt) {
-        jprintf("invaild args.\n");
+        PRINT_ERR("invaild args.\n");
         return -1;
     }
 
@@ -1529,7 +1522,7 @@ int vflash_init(vflash *flash, int vblock_amt, int vpage_amt, int vunit_amt)
 
     flash->vblock = (vblock **)malloc(sizeof(vblock *) * flash->vblock_amt);
     if (!flash->vblock) {
-        jprintf("vblock point array allocate failed.\n");
+        PRINT_ERR("vblock point array allocate failed.\n");
         return -1;
     }
     memset(flash->vblock, 0, sizeof(vblock *) * flash->vblock_amt);
@@ -1537,10 +1530,10 @@ int vflash_init(vflash *flash, int vblock_amt, int vpage_amt, int vunit_amt)
     for (int idx = 0; idx < flash->vblock_amt; ++idx) {
         vblock *block = vblock_new();
         if (!block) {
-            jprintf("vblock %d new failed.\n", idx);
+            PRINT_ERR("vblock %d new failed.\n", idx);
             return -1;
         } else if (block->init(block, flash->vpage_amt, flash->vunit_amt)) {
-            jprintf("vblock %d init failed.\n", idx);
+            PRINT_ERR("vblock %d init failed.\n", idx);
             block->destroy(block);
             return -1;
         }
@@ -1554,13 +1547,13 @@ int vflash_init(vflash *flash, int vblock_amt, int vpage_amt, int vunit_amt)
 vflash *vflash_dupc(vflash *flash)
 {
     if (!flash) {
-        jprintf("invliad args.\n");
+        PRINT_ERR("invliad args.\n");
         return NULL;
     }
 
     vflash *flash_new = vflash_new();
     if (!flash_new) {
-        jprintf("flash new failed\n");
+        PRINT_ERR("flash new failed\n");
     }
 
     flash_new->used       = flash->used;
@@ -1570,7 +1563,7 @@ vflash *vflash_dupc(vflash *flash)
 
     flash_new->vblock = (vblock **)malloc(sizeof(vblock *) * flash_new->vblock_amt);
     if (!flash_new->vblock) {
-        jprintf("vblock point array allocate failed.\n");
+        PRINT_ERR("vblock point array allocate failed.\n");
         flash_new->destroy(flash_new);
         return NULL;
     }
@@ -1579,7 +1572,7 @@ vflash *vflash_dupc(vflash *flash)
     for (int idx = 0; idx < flash_new->vblock_amt; ++idx) {
         flash_new->vblock[idx] = flash->vblock[idx]->dupc(flash->vblock[idx]);
         if (!flash_new->vblock[idx]) {
-            jprintf("block %d dupc failed\n", idx);
+            PRINT_ERR("block %d dupc failed\n", idx);
             flash_new->destroy(flash_new);
             return NULL;
         }
@@ -1613,7 +1606,7 @@ vflash *vflash_new(void)
 {
     vflash *flash = (vflash *)malloc(sizeof(vflash));
     if (!flash) {
-        jprintf("allocate failed\n");
+        PRINT_ERR("allocate failed\n");
         return NULL;
     }
     memset(flash, 0, sizeof(vflash));
