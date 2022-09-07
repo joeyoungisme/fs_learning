@@ -9,11 +9,6 @@
 
 #include "ff.h"
 
-Timer lfs_timer;
-unsigned int lfs_spent = 0;
-Timer fat_timer;
-unsigned int fat_spent = 0;
-
 static int get_rand_data(unsigned char *data, int size)
 {
     if (!data) return 0;
@@ -220,8 +215,6 @@ void lfs_uninit(myfs **lfs)
         return;
     }
 
-    PRINT("Done!\r\n");
-
     (*lfs)->destroy((*lfs));
 }
 
@@ -272,8 +265,6 @@ void fat_uninit(myfs **fat)
         return;
     }
 
-    PRINT("Done!\r\n");
-
     (*fat)->destroy((*fat));
 
     return;
@@ -281,32 +272,44 @@ void fat_uninit(myfs **fat)
 
 int main(int argc, char *argv[])
 {
+
+    Timer lfs_timer;
+    unsigned int lfs_init_spent = 0;
+    unsigned int lfs_test_spent = 0;
+    Timer fat_timer;
+    unsigned int fat_init_spent = 0;
+    unsigned int fat_test_spent = 0;
+
     srand(time(NULL));
 
     myfs *lfs = NULL;
     tm_set_ms(&lfs_timer, 0);
     lfs_init(&lfs);
-    lfs_spent = tm_stopwatch(lfs_timer);
-//  do {
-//      tm_set_ms(&lfs_timer, 0);
-//      myfs_test_procedure(lfs);
-//      lfs_spent = tm_stopwatch(lfs_timer);
-//  } while(0);
+    lfs_init_spent = tm_stopwatch(lfs_timer);
+
+    do {
+        tm_set_ms(&lfs_timer, 0);
+        myfs_test_procedure(lfs);
+        lfs_test_spent = tm_stopwatch(lfs_timer);
+    } while(0);
     lfs_uninit(&lfs);
 
     myfs *fat = NULL;
     tm_set_ms(&fat_timer, 0);
     fat_init(&fat);
-    fat_spent = tm_stopwatch(fat_timer);
-//  do {
-//      tm_set_ms(&fat_timer, 0);
-//      myfs_test_procedure(fat);
-//      fat_spent = tm_stopwatch(fat_timer);
-//  } while(0);
+    fat_init_spent = tm_stopwatch(fat_timer);
+    do {
+        tm_set_ms(&fat_timer, 0);
+        myfs_test_procedure(fat);
+        fat_test_spent = tm_stopwatch(fat_timer);
+    } while(0);
     fat_uninit(&fat);
 
-    printf("Lfs spent time : %d ms.\n", lfs_spent);
-    printf("Fat spent time : %d ms.\n", fat_spent);
+    printf("Lfs init spent time : %d ms.\n", lfs_init_spent);
+    printf("Lfs test spent time : %d ms.\n", lfs_test_spent);
+
+    printf("Fat init spent time : %d ms.\n", fat_init_spent);
+    printf("Fat test spent time : %d ms.\n", fat_test_spent);
 
     return 0;
 }
