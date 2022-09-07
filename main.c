@@ -3,274 +3,278 @@
 #include <string.h>
 #include <time.h>
 
+#include "timer.h"
 #include "misc.h"
 #include "myfs.h"
 
 #include "ff.h"
 
-static void get_rand_data(unsigned char *data, int size)
+Timer lfs_timer;
+unsigned int lfs_spent = 0;
+Timer fat_timer;
+unsigned int fat_spent = 0;
+
+static int get_rand_data(unsigned char *data, int size)
 {
-    if (!data) return;
-    if (!size) return;
+    if (!data) return 0;
+    if (!size) return 0;
     memset(data, 'A' + (rand() % ('Z' - 'A')), size);
-    return;
+    return size;
 }
 
-void lfs_example(void)
+int myfs_mkdir_example(myfs *fs)
 {
-    PRINT("!! LFS EXAMPLE !!\r\n");
+    if (!fs) {
+        return -1;
+    }
+
+    if (fs->mkdir(fs, "00")) {
+        PRINT_ERR("%s() fs mkdir 00 failed\n", __func__);
+        return -1;
+    }
+    if (fs->mkdir(fs, "01")) {
+        PRINT_ERR("%s() fs mkdir 01 failed\n", __func__);
+        return -1;
+    }
+
+    return 0;
+}
+
+int myfs_dirlist_example(myfs *fs)
+{
+    if (!fs) {
+        return -1;
+    }
 
     myfs_dir dir;
-    myfs_file file;
     myfs_file_info info;
 
-    myfs *myfs = myfs_new();
-    if (!myfs) {
-        PRINT_ERR("%s() myfs new failed\n", __func__);
-        return;
-    } else if (myfs->init(myfs, MYFS_LITTLEFS, 8, 32, 512)) {
-        PRINT_ERR("%s() myfs init failed\n", __func__);
-        return;
-    } else if (myfs->mount(myfs)) {
-        PRINT_ERR("%s() myfs mount failed\n", __func__);
-
-        if (myfs->format(myfs)) {
-            PRINT_ERR("%s() myfs format failed\n", __func__);
-            return;
-        } else if (myfs->mount(myfs)) {
-            PRINT_ERR("%s() myfs mount failed (again).\n", __func__);
-            return;
-        }
-    }
-
-    if (myfs->mkdir(myfs, "00")) {
-        PRINT_ERR("%s() myfs mkdir 00 failed\n", __func__);
-    }
-    if (myfs->mkdir(myfs, "01")) {
-        PRINT_ERR("%s() myfs mkdir 01 failed\n", __func__);
-    }
-
-    if (myfs->opendir(myfs, &dir, "/")) {
-        PRINT_ERR("%s() myfs opendir failed\n", __func__);
-        return;
+    if (fs->opendir(fs, &dir, "/")) {
+        PRINT_ERR("%s() fs opendir failed\n", __func__);
+        return -1;
     }
 
     printf("--------\r\nRoot directory:\r\n");
     uint32_t totalFiles = 0;
     uint32_t totalDirs = 0;
     for(;;) {
-        int rc = myfs->readdir(myfs, &dir, &info);
-        if (rc < 0) {
-            PRINT_ERR("%s() readdir failed (%d).\n", __func__, rc);
-            return;
-        } else if (!rc) {
-            break;
-        } else if (info.lfs.type & LFS_TYPE_DIR) {
-            printf("  DIR  %s\r\n", info.lfs.name);
-            totalDirs++;
+
+        int rc = fs->readdir(fs, &dir, &info);
+
+        if (fs->type == MYFS_LITTLEFS) {
+            if (rc < 0) {
+                PRINT_ERR("%s() readdir failed (%d).\n", __func__, rc);
+                return -1;
+            } else if (!rc) {
+                break;
+            } else if (info.lfs.type & LFS_TYPE_DIR) {
+                printf("[LFS] DIR  %s\r\n", info.lfs.name);
+                totalDirs++;
+            } else {
+                printf("[LFS] FILE %s (%d byte)\r\n", info.lfs.name, info.lfs.size);
+                totalFiles++;
+            }
+        } else if (fs->type == MYFS_FATFS) {
+            if (rc) {
+                break;
+            } else if (info.fat.fname[0] == '\0') {
+                break;
+            } else if (info.fat.fattrib & AM_DIR) {
+                printf("[FAT] DIR  %s\r\n", info.fat.fname);
+                totalDirs++;
+            } else {
+                printf("[FAT] FILE %s (%ld byte)\r\n", info.fat.fname, info.fat.fsize);
+                totalFiles++;
+            }
         } else {
-            printf("  FILE %s (%d byte)\r\n", info.lfs.name, info.lfs.size);
-            totalFiles++;
+            break;
         }
     }
     printf("(total: %u dirs, %u files)\r\n--------\r\n", totalDirs, totalFiles);
 
-    if (myfs->closedir(myfs, &dir)) {
-        PRINT_ERR("%s() myfs closedir failed\n", __func__);
-        return;
+    if (fs->closedir(fs, &dir)) {
+        PRINT_ERR("%s() fs closedir failed\n", __func__);
+        return -1;
     }
+
+    return 0;
+}
+int myfs_write_log_example(myfs *fs)
+{
+    if (!fs) {
+        return -1;
+    }
+
+    myfs_file file;
 
     printf("Writing to log.txt...\r\n");
 
-    char writeBuff[512];
-    snprintf(writeBuff, sizeof(writeBuff), "@..@ I'm Joeyoung ~ HaHaHa\r\n");
+    int flag = 0;
+    if (fs->type == MYFS_LITTLEFS) {
+        flag = LFS_O_RDWR | LFS_O_CREAT | LFS_O_APPEND;
+    } else if (fs->type == MYFS_FATFS) {
+        flag = FA_OPEN_APPEND | FA_WRITE;
+    }
 
-    if (myfs->open(myfs, &file, "log.txt", LFS_O_RDWR | LFS_O_CREAT | LFS_O_APPEND)) {
+    if (fs->open(fs, &file, "log.txt", flag)) {
         PRINT_ERR("%s() open failed.\n", __func__);
-        return;
+        return -1;
     }
 
-    unsigned int bytesToWrite = strlen(writeBuff);
-    PRINT("myfs write (%d) : \n------\n%s\n------\n", bytesToWrite, writeBuff);
-    int res = myfs->write(myfs, &file, writeBuff, bytesToWrite);
-    if (res < 0) {
-    // if (myfs->write(myfs, &file, writeBuff, bytesToWrite) < 0) {
+    char writeBuff[512];
+    int bytesToWrite = get_rand_data(writeBuff, 512);
+    // PRINT("myfs write (%d) : \n------\n%s\n------\n", bytesToWrite, writeBuff);
+    if (fs->write(fs, &file, writeBuff, bytesToWrite) < 0) {
         PRINT_ERR("%s() write failed.\n", __func__);
-        return;
+        return -1;
     }
-    PRINT("myfs write res %d \n", res);
 
-    if (myfs->close(myfs, &file)) {
+    if (fs->close(fs, &file)) {
         PRINT_ERR("%s() close failed.\n", __func__);
-        return;
+        return -1;
     }
+
+    return 0;
+}
+int myfs_read_log_example(myfs *fs)
+{
+    if (!fs) {
+        return -1;
+    }
+
+    myfs_file file;
 
     printf("Reading file...\r\n");
 
-    if (myfs->open(myfs, &file, "log.txt", LFS_O_RDWR | LFS_O_CREAT)) {
+    if (fs->open(fs, &file, "log.txt", LFS_O_RDWR | LFS_O_CREAT)) {
         PRINT_ERR("%s() open failed.\n", __func__);
-        return;
+        return -1;
     }
 
-    printf("```\r\n");
+    // printf("```\r\n");
     for(;;)
     {
         char readBuff[512];
-        int rlen = myfs->read(myfs, &file, readBuff, sizeof(readBuff)-1);
+        int rlen = fs->read(fs, &file, readBuff, sizeof(readBuff)-1);
         if (rlen < 0) {
-            PRINT_ERR("%s() read failed.\n", __func__);
-            return;
+            // PRINT_ERR("%s() read failed.\n", __func__);
+            return -1;
         } else if (!rlen) {
             break;
         }
         readBuff[rlen] = '\0';
-        printf("%s", readBuff);
+        // printf("%s", readBuff);
     }
-    printf("```\r\n");
+    // printf("\r\n```\r\n");
 
-    if (myfs->close(myfs, &file)) {
+    if (fs->close(fs, &file)) {
         PRINT_ERR("%s() close failed.\n", __func__);
-        return;
+        return -1;
     }
 
-    if (myfs->unmount(myfs)) {
+    return 0;
+}
+
+int myfs_test_procedure(myfs *fs)
+{
+    if (!fs) { return -1; }
+
+    myfs_mkdir_example(fs);
+    myfs_dirlist_example(fs);
+    myfs_write_log_example(fs);
+    myfs_read_log_example(fs);
+
+    return 0;
+}
+
+void lfs_init(myfs **lfs)
+{
+    PRINT("!! LFS INIT !!\r\n");
+
+    *lfs = myfs_new();
+    if (!(*lfs)) {
+        PRINT_ERR("%s() (*lfs) new failed\n", __func__);
+        return;
+    } else if ((*lfs)->init((*lfs), MYFS_LITTLEFS, 8, 32, 512)) {
+        PRINT_ERR("%s() (*lfs) init failed\n", __func__);
+        return;
+    } else if ((*lfs)->mount((*lfs))) {
+        PRINT_ERR("%s() (*lfs) mount failed\n", __func__);
+
+        if ((*lfs)->format((*lfs))) {
+            PRINT_ERR("%s() (*lfs) format failed\n", __func__);
+            return;
+        } else if ((*lfs)->mount((*lfs))) {
+            PRINT_ERR("%s() lfs mount failed (again).\n", __func__);
+            return;
+        }
+    }
+}
+
+void lfs_uninit(myfs **lfs)
+{
+    PRINT("!! LFS UNINIT !!\r\n");
+
+    if ((*lfs)->unmount((*lfs))) {
         PRINT_ERR("%s() unmount failed.\n", __func__);
         return;
     }
 
-    printf("Done!\r\n");
+    PRINT("Done!\r\n");
 
-    myfs->destroy(myfs);
+    (*lfs)->destroy((*lfs));
 }
 
-void fat_example(void)
+void fat_init(myfs **fatfs)
 {
-    PRINT("!! FAT EXAMPLE !!\r\n");
+    PRINT("!! FAT INIT !!\r\n");
 
-    myfs_dir dir;
-    myfs_file file;
-    myfs_file_info info;
     uint32_t freeClust = 0;
     uint32_t totalBlocks = 0;
     uint32_t freeBlocks = 0;
 
-    myfs *myfs = myfs_new();
-    if (!myfs) {
-        PRINT_ERR("%s() myfs new failed\n", __func__);
+    *fatfs = myfs_new();
+    if (!(*fatfs)) {
+        PRINT_ERR("%s() (*fatfs) new failed\n", __func__);
         return;
-    } else if (myfs->init(myfs, MYFS_FATFS, 8, 32, 512)) {
-        PRINT_ERR("%s() myfs init failed\n", __func__);
+    } else if ((*fatfs)->init((*fatfs), MYFS_FATFS, 8, 32, 512)) {
+        PRINT_ERR("%s() (*fatfs) init failed\n", __func__);
         return;
-    } else if (myfs->mount(myfs)) {
-        PRINT_ERR("%s() myfs mount failed\n", __func__);
+    } else if ((*fatfs)->mount((*fatfs))) {
+        PRINT_ERR("%s() (*fatfs) mount failed\n", __func__);
         return;
-    }
-
-    if (myfs->get_free_clust(myfs, &freeClust)) {
+    } else if ((*fatfs)->get_free_clust((*fatfs), &freeClust)) {
 
         PRINT_ERR("%s() gree free clust failed.\n", __func__);
 
-        if (myfs->format(myfs)) {
-            PRINT_ERR("%s() myfs format failed\n", __func__);
+        if ((*fatfs)->format((*fatfs))) {
+            PRINT_ERR("%s() (*fatfs) format failed\n", __func__);
             return;
-        } else if (myfs->get_free_clust(myfs, &freeClust)) {
+        } else if ((*fatfs)->get_free_clust((*fatfs), &freeClust)) {
             PRINT_ERR("%s() gree free clust failed (again).\n", __func__);
             return;
         }
     }
 
-    totalBlocks = (myfs->fat->head->core.n_fatent - 2) * myfs->fat->head->core.csize;
-    freeBlocks = freeClust * myfs->fat->head->core.csize;
+    totalBlocks = ((*fatfs)->fat->head->core.n_fatent - 2) * (*fatfs)->fat->head->core.csize;
+    freeBlocks = freeClust * (*fatfs)->fat->head->core.csize;
 
-    printf("Total blocks: %u (%u Mb)\r\n", totalBlocks, totalBlocks / 2000);
-    printf("Free blocks: %u (%u Mb)\r\n", freeBlocks, freeBlocks / 2000);
+    PRINT("Total blocks: %u (%u Mb)\r\n", totalBlocks, totalBlocks / 2000);
+    PRINT("Free blocks: %u (%u Mb)\r\n", freeBlocks, freeBlocks / 2000);
 
-    if (myfs->opendir(myfs, &dir, "/")) {
-        PRINT_ERR("%s() myfs opendir failed\n", __func__);
-        return;
-    }
+}
+void fat_uninit(myfs **fat)
+{
+    PRINT("!! FAT UNINIT !!\r\n");
 
-    printf("--------\r\nRoot directory:\r\n");
-    uint32_t totalFiles = 0;
-    uint32_t totalDirs = 0;
-    for(;;) {
-        if (myfs->readdir(myfs, &dir, &info)) {
-            break;
-        } else if (info.fat.fname[0] == '\0') {
-            break;
-        } else if (info.fat.fattrib & AM_DIR) {
-            printf("  DIR  %s\r\n", info.fat.fname);
-            totalDirs++;
-        } else {
-            printf("  FILE %s\r\n", info.fat.fname);
-            totalFiles++;
-        }
-    }
-    printf("(total: %u dirs, %u files)\r\n--------\r\n", totalDirs, totalFiles);
-
-    if (myfs->closedir(myfs, &dir)) {
-        PRINT_ERR("%s() myfs closedir failed\n", __func__);
-        return;
-    }
-
-
-    printf("Writing to log.txt...\r\n");
-
-    char writeBuff[512];
-    int off = snprintf(writeBuff, sizeof(writeBuff), "Total blocks: %u (%u Mb); Free blocks: %u (%u Mb)\r\n",
-              totalBlocks, totalBlocks / 2000,
-              freeBlocks, freeBlocks / 2000);
-    snprintf(writeBuff + off, sizeof(writeBuff) - off, "@..@ I'm Joeyoung ~ HaHaHa\r\n");
-
-    if (myfs->open(myfs, &file, "log.txt", FA_OPEN_APPEND | FA_WRITE)) {
-        PRINT_ERR("%s() open failed.\n", __func__);
-        return;
-    }
-
-    unsigned int bytesToWrite = strlen(writeBuff);
-    PRINT("myfs write (%d) : \n------\n%s\n------\n", bytesToWrite, writeBuff);
-    int res = myfs->write(myfs, &file, writeBuff, bytesToWrite);
-    if (res < 0) {
-    // if (myfs->write(myfs, &file, writeBuff, bytesToWrite) < 0) {
-        PRINT_ERR("%s() write failed.\n", __func__);
-        return;
-    }
-    PRINT("myfs write res %d \n", res);
-
-    if (myfs->close(myfs, &file)) {
-        PRINT_ERR("%s() close failed.\n", __func__);
-        return;
-    }
-
-    printf("Reading file...\r\n");
-
-    if (myfs->open(myfs, &file, "log.txt", FA_READ)) {
-        PRINT_ERR("%s() open failed.\n", __func__);
-        return;
-    }
-
-    char readBuff[512];
-    int rlen = myfs->read(myfs, &file, readBuff, sizeof(readBuff)-1);
-    if (rlen < 0) {
-        PRINT_ERR("%s() read failed.\n", __func__);
-        return;
-    }
-    readBuff[rlen] = '\0';
-    printf("```\r\n%s\r\n```\r\n", readBuff);
-
-    if (myfs->close(myfs, &file)) {
-        PRINT_ERR("%s() close failed.\n", __func__);
-        return;
-    }
-
-    if (myfs->unmount(myfs)) {
+    if ((*fat)->unmount((*fat))) {
         PRINT_ERR("%s() unmount failed.\n", __func__);
         return;
     }
 
-    printf("Done!\r\n");
+    PRINT("Done!\r\n");
 
-    myfs->destroy(myfs);
+    (*fat)->destroy((*fat));
 
     return;
 }
@@ -279,8 +283,30 @@ int main(int argc, char *argv[])
 {
     srand(time(NULL));
 
-    // fat_example();
-    lfs_example();
+    myfs *lfs = NULL;
+    tm_set_ms(&lfs_timer, 0);
+    lfs_init(&lfs);
+    lfs_spent = tm_stopwatch(lfs_timer);
+//  do {
+//      tm_set_ms(&lfs_timer, 0);
+//      myfs_test_procedure(lfs);
+//      lfs_spent = tm_stopwatch(lfs_timer);
+//  } while(0);
+    lfs_uninit(&lfs);
+
+    myfs *fat = NULL;
+    tm_set_ms(&fat_timer, 0);
+    fat_init(&fat);
+    fat_spent = tm_stopwatch(fat_timer);
+//  do {
+//      tm_set_ms(&fat_timer, 0);
+//      myfs_test_procedure(fat);
+//      fat_spent = tm_stopwatch(fat_timer);
+//  } while(0);
+    fat_uninit(&fat);
+
+    printf("Lfs spent time : %d ms.\n", lfs_spent);
+    printf("Fat spent time : %d ms.\n", fat_spent);
 
     return 0;
 }

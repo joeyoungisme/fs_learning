@@ -5338,7 +5338,6 @@ FRESULT f_mkfs (
 	if (disk_ioctl(pdrv, GET_BLOCK_SIZE, &sz_blk) != RES_OK || !sz_blk || sz_blk > 32768 || (sz_blk & (sz_blk - 1))) {
         sz_blk = 1;	/* Erase block to align data area */
     }
-    printf("disk ioctl BLOCK SIZE %ld\n", sz_blk);
 #if _MAX_SS != _MIN_SS		/* Get sector size of the medium if variable sector size cfg. */
 	if (disk_ioctl(pdrv, GET_SECTOR_SIZE, &ss) != RES_OK) return FR_DISK_ERR;
 	if (ss > _MAX_SS || ss < _MIN_SS || (ss & (ss - 1))) return FR_DISK_ERR;
@@ -5367,13 +5366,13 @@ FRESULT f_mkfs (
 		/* Create a single-partition in this function */
 		if (disk_ioctl(pdrv, GET_SECTOR_COUNT, &sz_vol) != RES_OK) return FR_DISK_ERR;
 		b_vol = (opt & FM_SFD) ? 0 : 63;		/* Volume start sector */
-        printf("reserved sector : %ld.\n", b_vol);
+        // printf("reserved sector : %ld.\n", b_vol);
 		if (sz_vol < b_vol) {
             printf("total sector %ld < reserved sector %ld.\n", sz_vol, b_vol);
             return FR_MKFS_ABORTED;
         }
 		sz_vol -= b_vol;						/* Volume size */
-        printf("available sector : %ld.\n", sz_vol);
+        // printf("available sector : %ld.\n", sz_vol);
 	}
 	if (sz_vol < 128) {
         printf("sz vol < 128 aborted.\n");
@@ -5599,15 +5598,10 @@ FRESULT f_mkfs (
 
 			/* Align data base to erase block boundary (for flash memory media) */
 			n = ((b_data + sz_blk - 1) & ~(sz_blk - 1)) - b_data;	/* Next nearest erase block from current data base */
-            printf("n = ((b_data + sz_blk - 1) & ~(sz_blk - 1)) - b_data\n");
-            printf("%ld = ((%ld + %ld - 1) & ~(%ld - 1)) - %ld",
-                    n, b_data, sz_blk, sz_blk, b_data);
-
 			if (fmt == FS_FAT32) {		/* FAT32: Move FAT base */
 				sz_rsv += n; b_fat += n;
 			} else {					/* FAT12/16: Expand FAT size */
 				sz_fat += n / n_fats;
-                printf("sz_fat (%ld) += n (%ld) / n_fats (%d)\n", sz_fat, n, n_fats);
 			}
 
 			/* Determine number of clusters and final check of validity of the FAT sub-type */
@@ -5616,9 +5610,6 @@ FRESULT f_mkfs (
                 return FR_MKFS_ABORTED;	/* Too small volume */
             }
 			n_clst = (sz_vol - sz_rsv - sz_fat * n_fats - sz_dir) / pau;
-            printf("n_clst = (sz_vol - sz_rsv - sz_fat * n_fats - sz_dir) / pau;\n");
-            printf("%ld = (%ld - %ld - %ld * %d - %ld) / %ld;\n",
-                    n_clst, sz_vol, sz_rsv, sz_fat, n_fats, sz_dir, pau);
 			if (fmt == FS_FAT32) {
 				if (n_clst <= MAX_FAT16) {	/* Too few clusters for FAT32 */
 					if (!au && (au = pau / 2) != 0) continue;	/* Adjust cluster size and retry */

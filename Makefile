@@ -42,6 +42,7 @@ $(TARGET): $(OBJ)
 	$(CC) $(INCLUDE) $(CFLAG) -c -o $(BUILD)/$@ $< $(LIBS)
 
 clean:
+	rm -f *.config
 	rm -f $(TARGET)
 	rm -rf build
 	rm -f *.o
