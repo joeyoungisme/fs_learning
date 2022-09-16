@@ -68,6 +68,86 @@ DSTATUS fat_disk_status(BYTE pdrv)
     return RES_OK;
 }
 
+static int fat_sector_to_block(vflash *flash, DWORD sector)
+{
+    unsigned long sec_per_blk = flash->block_size(flash) / _MAX_SS;
+
+    return sector / sec_per_blk;
+}
+static int fat_sector_to_page(vflash *flash, DWORD sector)
+{
+    unsigned long sec_per_blk = flash->block_size(flash) / _MAX_SS;
+    unsigned long sec_per_pag = flash->page_size(flash) / _MAX_SS;
+
+    return (sector % sec_per_blk) / sec_per_pag;
+}
+static int fat_sector_to_page_off(vflash *flash, DWORD sector)
+{
+    unsigned long sec_per_blk = flash->block_size(flash) / _MAX_SS;
+    unsigned long sec_per_pag = flash->page_size(flash) / _MAX_SS;
+
+    return ((sector % sec_per_blk) % sec_per_pag) * _MAX_SS;
+}
+static int fat_sector_to_block_off(vflash *flash, DWORD sector)
+{
+    int page = fat_sector_to_page(flash, sector);
+    int page_off = fat_sector_to_page_off(flash, sector);
+
+    return (page * flash->page_size(flash)) + page_off;
+}
+static int fat_over_write_detect(vflash *flash, DWORD sector)
+{
+    int bidx = fat_sector_to_block(flash, sector);
+    int pidx = fat_sector_to_page(flash, sector);
+
+    vblock *block = flash->get_block(flash, bidx);
+    vpage *page = block->get_page(block, pidx);
+
+    for (int idx = 0; idx < page->vunit_amt; ++idx) {
+        if (page->vunit[idx].used) return 1;
+    }
+
+    return 0;
+}
+static int fat_erase_sector(vflash *flash, DWORD sector)
+{
+    int blk_size = flash->block_size(flash);
+    unsigned char *block_buff = (unsigned char *)malloc(blk_size);
+    if (!block_buff) {
+        PRINT_ERR("%s() malloc failed : %s.\n", __func__, strerror(errno));
+        return -1;
+    }
+
+    memset(block_buff, 0, blk_size);
+
+    int blk = fat_sector_to_block(flash, sector);
+    int pag = fat_sector_to_page(flash, sector);
+
+    vblock *block = flash->get_block(flash, blk);
+
+    if (block->read(block, 0, block_buff, blk_size)) {
+        PRINT_ERR("%s() read failed.\n", __func__);
+        free(block_buff);
+        return -1;
+    }
+
+    block->erase(block);
+
+    // write back above sector data
+    int byte_off = (pag * flash->page_size(flash)) + fat_sector_to_page_off(flash, sector);
+    block->write(block, 0, block_buff, byte_off);
+    flash->fblock_update(flash, blk, 0, byte_off);
+
+    // write back after sector data
+    byte_off += _MAX_SS;
+    block->write(block, byte_off, block_buff + byte_off, blk_size - byte_off);
+    flash->fblock_update(flash, blk, byte_off, blk_size - byte_off);
+
+    free(block_buff);
+
+    return 0;
+}
+
 /**
   * @brief  Reads Sector(s)
   * @param  pdrv: Physical drive number (0..)
@@ -83,27 +163,24 @@ DRESULT fat_disk_read(BYTE pdrv, BYTE *buff, DWORD sector, UINT count)
         return RES_PARERR;
     }
 
-    // printf("sec %ld , count %d.\n", sector, count);
-
-    unsigned long sec_per_blk = dev->flash->block_size(dev->flash) / _MAX_SS;
-    // printf("sec per blk %ld.\n", sec_per_blk);
-    unsigned long sec_per_pag = dev->flash->page_size(dev->flash) / _MAX_SS;
-    // printf("sec per pag %ld.\n", sec_per_pag);
-
     // sector to block
     for (int sec = sector; sec < (sector + count); ++sec) {
 
-        int blk = sec / sec_per_blk;
+        int blk = fat_sector_to_block(dev->flash, sec);
         vblock *rblock = dev->flash->get_block(dev->flash, blk);
 
-        int pag = (sec % sec_per_blk) / sec_per_pag;
+        int pag = fat_sector_to_page(dev->flash, sec);
         vpage *rpage = rblock->get_page(rblock, pag);
-        // PRINT("get page %d\n", pag);
 
-        int off = ((sec % sec_per_blk) % sec_per_pag) * _MAX_SS;
+        int off = fat_sector_to_page_off(dev->flash, sec);
 
-        rpage->read(rpage, off, buff + ((sec - sector) * _MAX_SS), _MAX_SS);
+        if (rpage->read(rpage, off, buff + ((sec - sector) * _MAX_SS), _MAX_SS)) {
+            PRINT_ERR("%s() fat %d : page read failed blk %d , pag %d.\n", __func__, dev->id, blk, pag);
+            return RES_ERROR;
+        }
     }
+
+    dev->read_cnt++;
 
     return RES_OK;
 }
@@ -124,31 +201,50 @@ DRESULT fat_disk_write (BYTE pdrv, const BYTE *buff, DWORD sector, UINT count)
         return RES_PARERR;
     }
 
-    unsigned long sec_per_blk = dev->flash->block_size(dev->flash) / _MAX_SS;
-    unsigned long sec_per_pag = dev->flash->page_size(dev->flash) / _MAX_SS;
+#ifdef STEP_BY_STEP
+        PRINT("[FAT DISK WRITE] [sector %ld] [count %d]\n", sector, count);
+#endif
+
+    vflash *flash = dev->flash;
 
     // sector to block
-    int wblk = sector / sec_per_blk;
-    int wpag = (sector % sec_per_blk) / sec_per_pag;
     for (int sec = sector; sec < (sector + count); ++sec) {
 
-        int blk = sec / sec_per_blk;
-        vblock *wblock = dev->flash->get_block(dev->flash, blk);
+        int blk = fat_sector_to_block(flash, sec);
+        vblock *wblock = flash->get_block(flash, blk);
 
-        int pag = (sec % sec_per_blk) / sec_per_pag;
+        int pag = fat_sector_to_page(flash, sec);
         vpage *wpage = wblock->get_page(wblock, pag);
 
-        int off = ((sec % sec_per_blk) % sec_per_pag) * _MAX_SS;
+        int off = fat_sector_to_page_off(flash, sec);
 
-        wpage->write(wpage, off, buff + ((sec - sector) * _MAX_SS), _MAX_SS);
-
-        if ((wblk != blk) || (pag != wpag)) {
-            dev->flash->fpage_update(dev->flash, blk, wpag);
-            wblk = blk;
-            wpag = pag;
+        if (fat_over_write_detect(flash, sector)) {
+            PRINT("fat detect sector %ld over write.\n", sector);
+            if (fat_erase_sector(flash, sector)) {
+                PRINT_ERR("%s() fat erase sector %ld failed.\n", __func__, sector);
+                return RES_ERROR;
+            }
         }
+
+        const BYTE *buff_off = buff + ((sec - sector) * _MAX_SS);
+
+#ifdef STEP_BY_STEP
+        PRINT("[WRITE] [blk %d] [pag %d] [off %d] [sec size %d] [buff off : %ld]\n", blk, pag, off, _MAX_SS, buff_off - buff);
+#endif
+
+        if (wpage->write(wpage, off, buff_off, _MAX_SS)) {
+            PRINT_ERR("%s() fat %d : page write failed blk %d , pag %d.\n", __func__, dev->id, blk, pag);
+            return RES_ERROR;
+        }
+
+        int blk_off = fat_sector_to_block_off(flash, sec);
+#ifdef STEP_BY_STEP
+        PRINT("[UPDATE] [blk %d] [off %d] [size %d]\n", blk, blk_off, _MAX_SS);
+#endif
+        flash->fblock_update(flash, blk, blk_off, _MAX_SS);
     }
-    dev->flash->fpage_update(dev->flash, wblk, wpag);
+
+    dev->prog_cnt++;
 
     return RES_OK;
 }
@@ -270,9 +366,9 @@ int myfat_dev_init(myfat_dev *dev, int blk, int pag, int unit)
         return -1;
     }
 
-    if (dev->flash->page_size(dev->flash) < _MAX_SS) {
-        PRINT_ERR("vflash page size too less.\n");
-        PRINT_ERR("page %d byte < fat sector %d byte\n", dev->flash->page_size(dev->flash), _MAX_SS);
+    if (dev->flash->block_size(dev->flash) <= 32768) {
+        PRINT_ERR("vflash block size too less.\n");
+        PRINT_ERR("block %d byte < 32768 byte\n", dev->flash->block_size(dev->flash));
         dev->destroy(dev);
         return -1;
     }
@@ -564,7 +660,7 @@ int myfat_open(myfat *fat, int dev_id, FIL *file, char *path, int mode)
 
     FRESULT res = f_open(file, path, mode);
     if (res != FR_OK) {
-        PRINT_ERR("%s() fat %d : f_open failed.\n", __func__, dev_id);
+        PRINT_ERR("%s() fat %d : f_open \"%s\" failed (%d).\n", __func__, dev_id, path, res);
         return -1;
 
     }
@@ -650,6 +746,30 @@ int myfat_read(myfat *fat, int dev_id, FIL *file, unsigned char *data, int len)
 
     return (int)rlen;
 }
+int myfat_sync(myfat *fat, int dev_id, FIL *file)
+{
+    if (!fat) {
+        PRINT_ERR("%s() invalid args.\n", __func__);
+        return -1;
+    }
+   
+    myfat_dev *dev = get_dev_by_id(fat, dev_id);
+    if (!dev) {
+        PRINT_ERR("%s() invalid dev id.\n", __func__);
+        return -1;
+    }
+
+    // no need to change ?
+
+    UINT rlen = 0;
+    FRESULT res = f_sync(file);
+    if (res != FR_OK) {
+        PRINT_ERR("%s() fat %d : f_sync failed.\n", __func__, dev_id);
+        return -1;
+    }
+
+    return 0;
+}
 int myfat_remove(myfat *fat, int dev_id, char *path)
 {
     if (!fat) {
@@ -676,6 +796,101 @@ int myfat_remove(myfat *fat, int dev_id, char *path)
     }
 
     return 0;
+}
+vflash *myfat_get_flash(myfat *fat, int dev_id)
+{
+    if (!fat) {
+        PRINT_ERR("%s() invalid args.\n", __func__);
+        return NULL;
+    }
+
+    myfat_dev *dev = get_dev_by_id(fat, dev_id);
+    if (!dev) {
+        PRINT_ERR("%s() invalid dev id.\n", __func__);
+        return NULL;
+    }
+
+    return dev->flash;
+}
+int myfat_get_read_cnt(myfat *fat, int dev_id)
+{
+    if (!fat) {
+        PRINT_ERR("%s() invalid args.\n", __func__);
+        return -1;
+    }
+
+    myfat_dev *dev = get_dev_by_id(fat, dev_id);
+    if (!dev) {
+        PRINT_ERR("%s() invalid dev id.\n", __func__);
+        return -1;
+    }
+
+    return dev->read_cnt;
+}
+int myfat_get_prog_cnt(myfat *fat, int dev_id)
+{
+    if (!fat) {
+        PRINT_ERR("%s() invalid args.\n", __func__);
+        return -1;
+    }
+
+    myfat_dev *dev = get_dev_by_id(fat, dev_id);
+    if (!dev) {
+        PRINT_ERR("%s() invalid dev id.\n", __func__);
+        return -1;
+    }
+
+    return dev->prog_cnt;
+}
+int myfat_get_erase_cnt(myfat *fat, int dev_id)
+{
+    if (!fat) {
+        PRINT_ERR("%s() invalid args.\n", __func__);
+        return -1;
+    }
+
+    myfat_dev *dev = get_dev_by_id(fat, dev_id);
+    if (!dev) {
+        PRINT_ERR("%s() invalid dev id.\n", __func__);
+        return -1;
+    }
+
+    return dev->erase_cnt;
+}
+int myfat_get_sync_cnt(myfat *fat, int dev_id)
+{
+    if (!fat) {
+        PRINT_ERR("%s() invalid args.\n", __func__);
+        return -1;
+    }
+
+    myfat_dev *dev = get_dev_by_id(fat, dev_id);
+    if (!dev) {
+        PRINT_ERR("%s() invalid dev id.\n", __func__);
+        return -1;
+    }
+
+    return dev->sync_cnt;
+}
+void myfat_clear_cnt(myfat *fat, int dev_id)
+{
+    if (!fat) {
+        PRINT_ERR("%s() invalid args.\n", __func__);
+        return;
+    }
+
+    myfat_dev *dev = get_dev_by_id(fat, dev_id);
+    if (!dev) {
+        PRINT_ERR("%s() invalid dev id.\n", __func__);
+        return;
+    }
+
+    dev->read_cnt = 0;
+    dev->prog_cnt = 0;
+    dev->erase_cnt = 0;
+    dev->sync_cnt = 0;
+
+    return;
 }
 int myfat_get_free_clust(myfat *fat, int dev_id, unsigned int *free_clust)
 {
@@ -831,10 +1046,18 @@ myfat *myfat_new(void)
     fat->close = myfat_close;
     fat->write = myfat_write;
     fat->read = myfat_read;
+    fat->sync = myfat_sync;
     fat->remove = myfat_remove;
     fat->save = myfat_save;
 
     fat->get_free_clust = myfat_get_free_clust;
+
+    fat->get_flash = myfat_get_flash;
+    fat->get_read_cnt = myfat_get_read_cnt;
+    fat->get_prog_cnt = myfat_get_prog_cnt;
+    fat->get_erase_cnt = myfat_get_erase_cnt;
+    fat->get_sync_cnt = myfat_get_sync_cnt;
+    fat->clear_cnt = myfat_clear_cnt;
 
     return fat;
 }

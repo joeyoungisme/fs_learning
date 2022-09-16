@@ -25,6 +25,12 @@ typedef struct _myfat_dev {
     Diskio_drvTypeDef *config;
     vflash *flash;
 
+    // for our method and attribute
+    int read_cnt;
+    int prog_cnt;
+    int erase_cnt;
+    int sync_cnt;
+
     struct _myfat_dev *next;
 
 } myfat_dev;
@@ -51,10 +57,18 @@ typedef struct _myfat {
     int (*close)(struct _myfat *, int, FIL *);
     int (*write)(struct _myfat *, int, FIL *, unsigned char *, int);
     int (*read)(struct _myfat *, int, FIL *, unsigned char *, int);
+    int (*sync)(struct _myfat *, int, FIL *);
     int (*remove)(struct _myfat *, int, char *);
     int (*save)(struct _myfat *, int);
 
     int (*get_free_clust)(struct _myfat *, int, unsigned int *);
+
+    vflash *(*get_flash)(struct _myfat *, int);
+    int (*get_read_cnt)(struct _myfat *, int);
+    int (*get_prog_cnt)(struct _myfat *, int);
+    int (*get_erase_cnt)(struct _myfat *, int);
+    int (*get_sync_cnt)(struct _myfat *, int);
+    void (*clear_cnt)(struct _myfat *, int);
 
     myfat_dev *head;
 

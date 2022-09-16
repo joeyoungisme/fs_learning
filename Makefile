@@ -22,7 +22,9 @@ INCLUDE+= -I $(PWD)/littlefs/
 LIBS+= -lpthread -pthread
 
 CFLAG+=
-# CFLAG+=-DSTEP_BY_STEP
+CFLAG+=-DSTEP_BY_STEP
+# CFLAG+=-DSHOW_DETAIL
+# CFLAG+=-DSLOWLY
 CFLAG+=-DDEBUG_FLAG
 
 BUILD=build
@@ -40,6 +42,9 @@ $(TARGET): $(OBJ)
 
 %.o: %.c
 	$(CC) $(INCLUDE) $(CFLAG) -c -o $(BUILD)/$@ $< $(LIBS)
+
+clear:
+	rm -f *.config
 
 clean:
 	rm -f *.config

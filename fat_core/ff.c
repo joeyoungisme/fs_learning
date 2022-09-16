@@ -5583,13 +5583,17 @@ FRESULT f_mkfs (
 					for (i = 0, pau = 1; cst[i] && cst[i] <= n; i++, pau <<= 1) ;	/* Get from table */
 				}
 				n_clst = sz_vol / pau;
+                // printf("<< n_clst (%d) = sz_vol(%d) / pau(%d)\n", n_clst, sz_vol, pau);
 				if (n_clst > MAX_FAT12) {
 					n = n_clst * 2 + 4;		/* FAT size [byte] */
+                    // printf("<< n = n_clst(%d) * 2 + 4\n", n_clst);
 				} else {
 					fmt = FS_FAT12;
 					n = (n_clst * 3 + 1) / 2 + 3;	/* FAT size [byte] */
+                    // printf("<< n = (n_clst(%d) * 3 + 1) / 2 + 3\n", n_clst);
 				}
 				sz_fat = (n + ss - 1) / ss;		/* FAT size [sector] */
+                // printf("<< sz_fat (%d) = (n(%d) + ss(%d) - 1) / ss(%d)\n", sz_fat, n, ss, ss);
 				sz_rsv = 1;						/* Number of reserved sectors */
 				sz_dir = (DWORD)n_rootdir * SZDIRE / ss;	/* Rootdir size [sector] */
 			}
@@ -5598,15 +5602,18 @@ FRESULT f_mkfs (
 
 			/* Align data base to erase block boundary (for flash memory media) */
 			n = ((b_data + sz_blk - 1) & ~(sz_blk - 1)) - b_data;	/* Next nearest erase block from current data base */
+            // printf("<< n(%d) = ((b_data(%d) + sz_blk(%d) - 1) & ~(sz_blk - 1)) - b_data\n", n, b_data, sz_blk);
+
 			if (fmt == FS_FAT32) {		/* FAT32: Move FAT base */
 				sz_rsv += n; b_fat += n;
 			} else {					/* FAT12/16: Expand FAT size */
 				sz_fat += n / n_fats;
+                // printf("<< sz_fat (%d) += n(%d) / n_fats(%d)\n", sz_fat, n, n_fats);
 			}
 
 			/* Determine number of clusters and final check of validity of the FAT sub-type */
 			if (sz_vol < b_data + pau * 16 - b_vol) {
-                printf("sz vol < b_data + pau * 16 - b_vol\n");
+                // printf("sz vol < b_data + pau * 16 - b_vol\n");
                 return FR_MKFS_ABORTED;	/* Too small volume */
             }
 			n_clst = (sz_vol - sz_rsv - sz_fat * n_fats - sz_dir) / pau;
@@ -5634,6 +5641,12 @@ FRESULT f_mkfs (
 			}
 			if (fmt == FS_FAT12 && n_clst > MAX_FAT12) {
                 printf("n_clst (%ld) > MAX_FAT12 (%d).\n", n_clst, MAX_FAT12);
+                printf("sector vol(%ld) - sector rsv(%ld) - (sector fat(%ld) * n_fats(%d)) - sector dir(%ld) / pau(%ld).\n",
+                       sz_vol, sz_rsv, sz_fat, n_fats, sz_dir, pau);
+                printf("sector fat = ((n(%ld) + ss(%d) - 1) / ss(%d)) + (n(%ld) / n_fats(%d)).\n",
+				       n, ss, ss, n, n_fats);
+
+                printf("n = (n_clst(%ld) * 3 + 1) / 2 + 3.\n", n_clst);
                 return FR_MKFS_ABORTED;	/* Too many clusters for FAT12 */
             }
 

@@ -13,10 +13,6 @@ static int lfs_read(const struct lfs_config *cfg, lfs_block_t blk_num, lfs_off_t
     dev->read_cnt++;
     vflash *flash = dev->flash;
 
-#ifdef LFS_DEBUG_FLAG
-    PRINT("[blk_num %d] [size %d] [off %d]\n", blk_num, off, size);
-#endif
-
     if (!buffer || !size) {
         PRINT_ERR("invalid args\n");
         return -1;
@@ -44,10 +40,6 @@ static int lfs_prog(const struct lfs_config *cfg, lfs_block_t blk_num, lfs_off_t
     dev->prog_cnt++;
     vflash *flash = dev->flash;
 
-#ifdef LFS_DEBUG_FLAG
-    PRINT("[blk_num %d] [off %d] [size %d] [%02X ... %02X]\n", blk_num, off, size, ((unsigned char *)buffer)[0], ((unsigned char *)buffer)[size - 1]);
-#endif
-
     if (!buffer || !size) {
         PRINT_ERR("invalid args\n");
         return -1;
@@ -65,7 +57,9 @@ static int lfs_prog(const struct lfs_config *cfg, lfs_block_t blk_num, lfs_off_t
 #ifdef STEP_BY_STEP
     // jprintf("[blk_num %d] [unit off %d] [size %d] [%02X ... %02X]\n", blk_num, off / 4, size, ((unsigned char *)buffer)[0], ((unsigned char *)buffer)[size - 1]);
     int page_num = off / flash->page_size(flash);
-    PRINT("[blk_num %d] [page %d] [size %d] [%02X ... %02X]\n", blk_num, page_num, size, ((unsigned char *)buffer)[0], ((unsigned char *)buffer)[size - 1]);
+    PRINT("[PROG] [blk_num %d] [page %d] [size %d] [%02X ... %02X]\n", blk_num, page_num, size, ((unsigned char *)buffer)[0], ((unsigned char *)buffer)[size - 1]);
+
+#ifdef SHOW_DETAIL
     vpage *page = block->get_page(block, page_num);
     if (page) {
         vpage *wpage = page->dupc(page);
@@ -73,6 +67,7 @@ static int lfs_prog(const struct lfs_config *cfg, lfs_block_t blk_num, lfs_off_t
         block->wpage_rdump(block, page_num, wpage, 8);
         wpage->destroy(wpage);
     }
+#endif
 
     // block->rdump(block, 8);
 #endif
@@ -82,14 +77,11 @@ static int lfs_prog(const struct lfs_config *cfg, lfs_block_t blk_num, lfs_off_t
         return -101;
     }
 
-    int update_page = off / flash->page_size(flash);
-    if (flash->fpage_update(flash, blk_num, update_page)) {
-        PRINT_ERR("%s() fpage_update blk %d , pag %d failed.\n", __func__, blk_num, update_page);
-    } else {
-        PRINT("%s() fpage_update blk %d , pag %d ok.\n", __func__, blk_num, update_page);
+    if (flash->fblock_update(flash, blk_num, off, size)) {
+        PRINT_ERR("%s() fblock_update blk %d , off %d , size %d failed.\n", __func__, blk_num, off, size);
     }
 
-#ifdef STEP_BY_STEP
+#ifdef SLOWLY
     sleep(1);
 #endif
 
@@ -103,10 +95,6 @@ static int lfs_erase(const struct lfs_config *cfg, lfs_block_t blk_num)
     dev->erase_cnt++;
     vflash *flash = dev->flash;
 
-#ifdef LFS_DEBUG_FLAG
-    PRINT("[blk_num %d]\n", blk_num);
-#endif
-
     if (!flash) {
         PRINT_ERR("flash is NULL\n");
         return -99;
@@ -119,8 +107,10 @@ static int lfs_erase(const struct lfs_config *cfg, lfs_block_t blk_num)
     }
 
 #ifdef STEP_BY_STEP
-    PRINT("[blk_num %d]\n", blk_num);
+    PRINT("[ERAS] [blk_num %d]\n", blk_num);
+#ifdef SHOW_DETAIL
     block->rdump(block, 8);
+#endif
 #endif
 
     if (block->erase(block)) {
@@ -128,9 +118,9 @@ static int lfs_erase(const struct lfs_config *cfg, lfs_block_t blk_num)
         return -101;
     }
 
-    flash->fblock_update(flash, blk_num);
+    flash->fblock_update(flash, blk_num, 0, flash->block_size(flash));
 
-#ifdef STEP_BY_STEP
+#ifdef SLOWLY
     sleep(1);
 #endif
 
@@ -255,6 +245,7 @@ int mylfs_dev_init(mylfs_dev *dev, int blk, int pag, int uni)
     dev->config.sync = lfs_sync;
     dev->config.read_size = flash->page_size(flash);
     dev->config.prog_size =  flash->page_size(flash);
+    // dev->config.prog_size =  flash->page_size(flash) / 4;
     dev->config.block_size = flash->block_size(flash);
     dev->config.block_count = flash->vblock_amt;
     dev->config.cache_size = flash->page_size(flash);
@@ -367,7 +358,7 @@ int mylfs_get_sync_cnt(mylfs *lfs, int dev_id)
 
     return dev->sync_cnt;
 }
-int mylfs_get_eras_cnt(mylfs *lfs, int dev_id)
+int mylfs_get_erase_cnt(mylfs *lfs, int dev_id)
 {
     if (!lfs) {
         PRINT_ERR("%s() invliad args.\n", __func__);
@@ -584,7 +575,32 @@ int mylfs_close(mylfs *lfs, int dev_id, lfs_file_t *file)
         return -1;
     }
 
-    return lfs_file_close(&(dev->core), file);
+    //  if (lfs_file_sync(&(dev->core), file)) {
+    //      PRINT_ERR("%s() lfs file sync failed.\n", __func__);
+    //      return -1;
+    //  }
+
+    if (lfs_file_close(&(dev->core), file)) {
+        PRINT_ERR("%s() lfs file close failed.\n", __func__);
+        return -1;
+    }
+
+    return 0;
+}
+int mylfs_sync(mylfs *lfs, int dev_id, lfs_file_t *file)
+{
+    if (!lfs || !file) {
+        PRINT_ERR("%s() invliad args.\n", __func__);
+        return -1;
+    }
+
+    mylfs_dev *dev = get_dev_by_id(lfs, dev_id);
+    if (!dev) {
+        PRINT_ERR("%s() invalid dev id.\n", __func__);
+        return -1;
+    }
+
+    return lfs_file_sync(&(dev->core), file);
 }
 int mylfs_write(mylfs *lfs, int dev_id, lfs_file_t *file, unsigned char *data, int len)
 {
@@ -790,12 +806,13 @@ mylfs *mylfs_new(void)
     new_lfs->close = mylfs_close;
     new_lfs->write = mylfs_write;
     new_lfs->read = mylfs_read;
+    new_lfs->sync = mylfs_sync;
     new_lfs->remove = mylfs_remove;
     new_lfs->save = mylfs_save;
 
     new_lfs->clear_cnt = mylfs_clear_cnt;
     new_lfs->get_sync_cnt = mylfs_get_sync_cnt;
-    new_lfs->get_eras_cnt = mylfs_get_eras_cnt;
+    new_lfs->get_erase_cnt = mylfs_get_erase_cnt;
     new_lfs->get_prog_cnt = mylfs_get_prog_cnt;
     new_lfs->get_read_cnt = mylfs_get_read_cnt;
     new_lfs->get_flash = mylfs_get_flash;

@@ -53,12 +53,13 @@ typedef struct _mylfs {
     int (*close)(struct _mylfs *, int, lfs_file_t *);
     int (*write)(struct _mylfs *, int, lfs_file_t *, unsigned char *, int);
     int (*read)(struct _mylfs *, int, lfs_file_t *, unsigned char *, int);
+    int (*sync)(struct _mylfs *, int, lfs_file_t *);
     int (*remove)(struct _mylfs *, int, char *);
     int (*save)(struct _mylfs *, int);
 
     void (*clear_cnt)(struct _mylfs *, int);
     int (*get_sync_cnt)(struct _mylfs *, int);
-    int (*get_eras_cnt)(struct _mylfs *, int);
+    int (*get_erase_cnt)(struct _mylfs *, int);
     int (*get_prog_cnt)(struct _mylfs *, int);
     int (*get_read_cnt)(struct _mylfs *, int);
     vflash *(*get_flash)(struct _mylfs *, int);

@@ -51,6 +51,7 @@ typedef struct _myfs {
     int (*close)(struct _myfs *, myfs_file *);
     int (*write)(struct _myfs *, myfs_file *, unsigned char *, int);
     int (*read)(struct _myfs *, myfs_file *, unsigned char *, int);
+    int (*sync)(struct _myfs *, myfs_file *);
     int (*remove)(struct _myfs *, char *);
     void (*list)(struct _myfs *, char *);
     void (*save)(struct _myfs *);
@@ -60,12 +61,13 @@ typedef struct _myfs {
 
     // for lfs only method
 
+    // for virtual flash method
     vflash *(*get_flash)(struct _myfs *);
-    int (*get_read_cnt)(struct _mylfs *);
-    int (*get_prog_cnt)(struct _mylfs *);
-    int (*get_erase_cnt)(struct _mylfs *);
-    int (*get_sync_cnt)(struct _mylfs *);
-    void (*clear_cnt)(struct _mylfs *);
+    int (*get_read_cnt)(struct _myfs *);
+    int (*get_prog_cnt)(struct _myfs *);
+    int (*get_erase_cnt)(struct _myfs *);
+    int (*get_sync_cnt)(struct _myfs *);
+    void (*clear_cnt)(struct _myfs *);
 
     MYFS_TYPE type;
 

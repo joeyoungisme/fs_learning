@@ -17,6 +17,9 @@ typedef struct _vpage {
     int (*size)(struct _vpage *);
 
     struct _vpage *(*dupc)(struct _vpage *);
+    int (*copy)(struct _vpage *, struct _vpage *);
+    int (*copy_without)(struct _vpage *, struct _vpage *, int, int);
+
 
     int (*erase)(struct _vpage *);
     int (*write)(struct _vpage *, int, const unsigned char *, int);
@@ -24,8 +27,11 @@ typedef struct _vpage {
 
     int (*dump)(struct _vpage *, int);
     int (*rdump)(struct _vpage *, int);
-    int (*info)(struct _vpage *, int);
+    int (*info)(struct _vpage *, int, int);
 
+    vunit *(*get_unit)(struct _vpage *, int);
+
+    unsigned int seq;
     unsigned char used;
     unsigned int vunit_amt;
     vunit *vunit;
@@ -43,7 +49,7 @@ typedef struct _vblock {
     int (*rdump)(struct _vblock *, int);
     int (*wpage_dump)(struct _vblock *, int, vpage *, int);
     int (*wpage_rdump)(struct _vblock *, int, vpage *, int);
-    int (*info)(struct _vblock *, int);
+    int (*info)(struct _vblock *, int, int);
 
     int (*size)(struct _vblock *);
     int (*page_size)(struct _vblock *);
@@ -54,10 +60,12 @@ typedef struct _vblock {
     int (*write)(struct _vblock *, int, const unsigned char *, int);
     int (*read)(struct _vblock *, int, unsigned char *, int);
 
+    unsigned int seq;
     unsigned char used;
     unsigned int vunit_amt;
     unsigned int vpage_amt;
     vpage **vpage;
+
 } vblock;
 
 typedef struct _vflash {
@@ -80,8 +88,11 @@ typedef struct _vflash {
     int (*fimport)(struct _vflash *, char *);
     int (*fexport)(struct _vflash *, char *);
 
-    int (*fblock_update)(struct _vflash *, int);
+    int (*fblock_update)(struct _vflash *, int, int, int);
     int (*fpage_update)(struct _vflash *, int, int);
+
+    int (*check_addr)(struct _vflash *);
+    int (*check_val)(struct _vflash *);
 
     unsigned char used;
     unsigned int vunit_amt;

@@ -18,6 +18,108 @@ int myfs_get_free_clust(myfs *fs, unsigned int *free_clust)
 
     return fs->fat->get_free_clust(fs->fat, 0, free_clust);
 }
+
+vflash *myfs_get_flash(myfs *fs)
+{
+    if (!fs) {
+        PRINT_ERR("%s() invalid args.\n", __func__);
+        return NULL;
+    }
+
+    // for now , myfs just support 1 dev
+    if (fs->type == MYFS_FATFS) {
+        return fs->fat->get_flash(fs->fat, 0);
+    } else if (fs->type == MYFS_LITTLEFS) {
+        return fs->lfs->get_flash(fs->lfs, 0);
+    }
+
+    PRINT_ERR("%s() invalid myfs type.\n", __func__);
+    return NULL;
+}
+int myfs_get_read_cnt(myfs *fs)
+{
+    if (!fs) {
+        PRINT_ERR("%s() invalid args.\n", __func__);
+        return -1;
+    }
+
+    // for now , myfs just support 1 dev
+    if (fs->type == MYFS_FATFS) {
+        return fs->fat->get_read_cnt(fs->fat, 0);
+    } else if (fs->type == MYFS_LITTLEFS) {
+        return fs->lfs->get_read_cnt(fs->lfs, 0);
+    }
+
+    PRINT_ERR("%s() invalid myfs type.\n", __func__);
+    return -1;
+}
+int myfs_get_prog_cnt(myfs *fs)
+{
+    if (!fs) {
+        PRINT_ERR("%s() invalid args.\n", __func__);
+        return -1;
+    }
+
+    // for now , myfs just support 1 dev
+    if (fs->type == MYFS_FATFS) {
+        return fs->fat->get_prog_cnt(fs->fat, 0);
+    } else if (fs->type == MYFS_LITTLEFS) {
+        return fs->lfs->get_prog_cnt(fs->lfs, 0);
+    }
+
+    PRINT_ERR("%s() invalid myfs type.\n", __func__);
+    return -1;
+}
+int myfs_get_erase_cnt(myfs *fs)
+{
+    if (!fs) {
+        PRINT_ERR("%s() invalid args.\n", __func__);
+        return -1;
+    }
+
+    // for now , myfs just support 1 dev
+    if (fs->type == MYFS_FATFS) {
+        return fs->fat->get_erase_cnt(fs->fat, 0);
+    } else if (fs->type == MYFS_LITTLEFS) {
+        return fs->lfs->get_erase_cnt(fs->lfs, 0);
+    }
+    PRINT_ERR("%s() invalid myfs type.\n", __func__);
+    return -1;
+}
+int myfs_get_sync_cnt(myfs *fs)
+{
+    if (!fs) {
+        PRINT_ERR("%s() invalid args.\n", __func__);
+        return -1;
+    }
+
+    // for now , myfs just support 1 dev
+    if (fs->type == MYFS_FATFS) {
+        return fs->fat->get_sync_cnt(fs->fat, 0);
+    } else if (fs->type == MYFS_LITTLEFS) {
+        return fs->lfs->get_sync_cnt(fs->lfs, 0);
+    }
+    PRINT_ERR("%s() invalid myfs type.\n", __func__);
+    return -1;
+}
+void myfs_clear_cnt(myfs *fs)
+{
+    if (!fs) {
+        PRINT_ERR("%s() invalid args.\n", __func__);
+        return;
+    }
+
+    // for now , myfs just support 1 dev
+    if (fs->type == MYFS_FATFS) {
+        fs->fat->clear_cnt(fs->fat, 0);
+        return;
+    } else if (fs->type == MYFS_LITTLEFS) {
+        fs->lfs->clear_cnt(fs->lfs, 0);
+        return;
+    }
+    PRINT_ERR("%s() invalid myfs type.\n", __func__);
+    return;
+}
 int myfs_closedir(myfs *fs, myfs_dir *dir)
 {
     if (!fs || !dir) {
@@ -105,6 +207,24 @@ int myfs_remove(myfs *fs, char *path)
     return -1;
 }
 
+int myfs_sync(myfs *fs, myfs_file *fd)
+{
+    if (!fs || !fd) {
+        PRINT_ERR("%s() invalid args.\n", __func__);
+        return -1;
+    }
+
+    if (fs->type == MYFS_FATFS) {
+        // for now , myfs just support 1 dev
+        return fs->fat->sync(fs->fat, 0, &(fd->fat));
+    } else if (fs->type == MYFS_LITTLEFS) {
+        // for now , myfs just support 1 dev
+        return fs->lfs->sync(fs->lfs, 0, &(fd->lfs));
+    }
+
+    PRINT_ERR("%s() invalid myfs type.\n", __func__);
+    return -1;
+}
 int myfs_read(myfs *fs, myfs_file *fd, unsigned char *data, int size)
 {
     if (!fs || !fd || !data) {
@@ -120,6 +240,7 @@ int myfs_read(myfs *fs, myfs_file *fd, unsigned char *data, int size)
         return fs->lfs->read(fs->lfs, 0, &(fd->lfs), data, size);
     }
 
+    PRINT_ERR("%s() invalid myfs type.\n", __func__);
     return -1;
 }
 
@@ -138,6 +259,7 @@ int myfs_write(myfs *fs, myfs_file *fd, unsigned char *data, int size)
         return fs->lfs->write(fs->lfs, 0, &(fd->lfs), data, size);
     }
 
+    PRINT_ERR("%s() invalid myfs type.\n", __func__);
     return -1;
 }
 
@@ -335,6 +457,7 @@ myfs *myfs_new(void)
     newfs->mkdir = myfs_mkdir;
     newfs->remove = myfs_remove;
     newfs->read = myfs_read;
+    newfs->sync = myfs_sync;
     newfs->write = myfs_write;
     newfs->close = myfs_close;
     newfs->open = myfs_open;
@@ -345,6 +468,12 @@ myfs *myfs_new(void)
 
     newfs->get_free_clust = myfs_get_free_clust;
 
+    newfs->get_flash = myfs_get_flash;
+    newfs->get_read_cnt = myfs_get_read_cnt;
+    newfs->get_prog_cnt = myfs_get_prog_cnt;
+    newfs->get_erase_cnt = myfs_get_erase_cnt;
+    newfs->get_sync_cnt = myfs_get_sync_cnt;
+    newfs->clear_cnt = myfs_clear_cnt;
 
     return newfs;
 }
