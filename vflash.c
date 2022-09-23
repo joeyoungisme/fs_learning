@@ -26,17 +26,17 @@ static void number_line_bar(int unit_per_line)
 static void number_info_line_bar(int unit_per_line, int align)
 {
     // ---------------------------------------------
-    // | 00000000 | [■ (xx,oo)] [■ (xx,oo)] [■ (xx,oo)] ... 
+    // | 00000000 | [□ (xx,oo)] [■ (xx,oo)] [□ (xx,oo)] ... 
     // -------------
     printf("-------------");
 
     for (int idx = 0; idx < unit_per_line; ++idx) {
     // ---------------------------------------------
-    // | 00000000 | [■ (xx,oo)] [■ (xx,oo)] [■ (xx,oo)] ... 
+    // | 00000000 | [□ (xx,oo)] [■ (xx,oo)] [□ (xx,oo)] ... 
     //              ----
         printf("----");
 
-    // | 00000000 | [■ (??,??)] [■ (???,???)] [■ (xx,oo)] ... 
+    // | 00000000 | [□ (??,??)] [■ (???,???)] [■ (xx,oo)] ... 
     //                  -----  or   -------
         for (int an = 0; an < (align * 2 + 1); ++an) printf("-");
 
@@ -210,9 +210,7 @@ int vpage_dump(vpage *page, int unit_per_line)
 
     // -------------------------------------------------- ... 
     // | 00000000 - 00000000 | xxxxxxxx xxxxxxxx xxxxxxxx ... 
-    printf("------------------------");
-    for (int idx = 0; idx < unit_per_line; ++idx) printf("---------");
-    printf("-");
+    range_line_bar(unit_per_line);
     for (int idx = 0; ; ++idx)
     {
         if (!(idx % unit_per_line)) {
@@ -235,9 +233,7 @@ int vpage_dump(vpage *page, int unit_per_line)
         }
     }
 
-    printf("------------------------");
-    for (int idx = 0; idx < unit_per_line; ++idx) printf("---------");
-    printf("-\n");
+    range_line_bar(unit_per_line);
 
     return 0;
 }
@@ -296,18 +292,6 @@ int vpage_dump_read(vpage *page, int unit_per_line)
     range_line_bar(unit_per_line);
 
     return 0;
-}
-vunit *vpage_get_unit(vpage *page, int unit_num)
-{
-    if (!page || (unit_num >= page->vunit_amt)) {
-        PRINT_ERR("invalid args\n");
-        return NULL;
-    } else if (!page->vunit) {
-        PRINT_ERR("no init\n");
-        return NULL;
-    }
-
-    return &(page->vunit[unit_num]);
 }
 int vpage_info(vpage *page, int unit_per_line, int align)
 {
@@ -373,14 +357,11 @@ int vpage_erase(vpage *page)
         return -1;
     }
 
-    PRINT("page %d erase, vunit amount %d\n", page->seq, page->vunit_amt);
     for (int idx = 0; idx < page->vunit_amt; ++idx) {
-        printf("%d(%d)", idx, page->vunit[idx].erase);
         page->vunit[idx].used = 0;
         page->vunit[idx].erase++;
         page->vunit[idx].data = (VUNIT_TYPE)-1;
     }
-    printf("\n");
 
     page->used = 0;
 
@@ -437,7 +418,7 @@ int vpage_read(vpage *page, int off, unsigned char *buffer, int size)
 
     return 0;
 }
-int vpage_write(vpage *page, int off, const unsigned char *buffer, int size)
+int vpage_write(vpage *page, unsigned int off, const unsigned char *buffer, unsigned int size)
 {
     if (!page || !buffer || !size) {
         PRINT_ERR("invalid args\n");
@@ -478,6 +459,7 @@ int vpage_write(vpage *page, int off, const unsigned char *buffer, int size)
     //      ->      <-   □□□□ □□□□ ■■    ...
     //       unit size   ^         ^ not align data
     //                   align data
+
     if (size % align) {
         printf("size no align.\n");
         int no_align = size % align;
@@ -498,21 +480,47 @@ int vpage_write(vpage *page, int off, const unsigned char *buffer, int size)
     int cnt = size / align;
     VUNIT_TYPE *vbuff = (VUNIT_TYPE *)buffer;
     for (int idx = 0; idx < cnt; ++idx) {
-        if (page->vunit[(off / align) + idx].used) {
-            PRINT_ERR("over write.\n");
+        int uidx = (off / align) + idx;
+        if (page->vunit[uidx].used) {
+            PRINT_ERR("page %d , unit %d : over write.\n", page->seq, uidx);
             return -1;
         }
         if (*vbuff != (VUNIT_TYPE)-1) {
-            page->vunit[(off / align) + idx].write++;
-            page->vunit[(off / align) + idx].used = 1;
-            page->vunit[(off / align) + idx].data = *vbuff;
-            vunit_reverse(&(page->vunit[(off / align) + idx].data));
+            page->vunit[uidx].write++;
+            page->vunit[uidx].used = 1;
+            page->vunit[uidx].data = *vbuff;
+            vunit_reverse(&(page->vunit[uidx].data));
             page->used = 1;
         }
         vbuff++;
     }
 
     return 0;
+}
+VUNIT_TYPE vpage_get_unit(vpage *page, unsigned int unit)
+{
+    if (!page) {
+        PRINT_ERR("%s() invalid args.\n", __func__);
+        return (VUNIT_TYPE)0;
+    } else if (!page->vunit) {
+        PRINT_ERR("%s() no init.\n", __func__);
+        return (VUNIT_TYPE)0;
+    } else if (unit > page->vunit_amt) {
+        PRINT_ERR("%s() invalid unit.\n", __func__);
+        return (VUNIT_TYPE)0;
+    }
+
+    VUNIT_TYPE res = page->vunit[unit].data;
+
+    vunit_reverse(&res);
+
+    return res;
+}
+int vpage_addr(vpage *page)
+{
+    if (!page) { return 0; }
+
+    return page->seq * page->size(page);
 }
 int vpage_size(vpage *page)
 {
@@ -575,22 +583,49 @@ vpage *vpage_new(void)
     page->init         = vpage_init;
     page->destroy      = vpage_destroy;
     page->size         = vpage_size;
+    page->addr         = vpage_addr;
     page->erase        = vpage_erase;
     page->write        = vpage_write;
     page->read         = vpage_read;
+    page->get_unit     = vpage_get_unit;
     page->dump         = vpage_dump;
     page->dupc         = vpage_dupc;
     page->copy         = vpage_copy;
     page->copy_without = vpage_copy_without;
     page->rdump        = vpage_dump_read;
     page->info         = vpage_info;
-    page->get_unit     = vpage_get_unit;
 
     return page;
 }
 
 // ---- vblock ----
 
+int vblock_calc_page_addr(vblock *block, int page)
+{
+    if (!block || (page >= block->vpage_amt)) {
+        PRINT_ERR("invalid args\n");
+        return -1;
+    } else if (!block->vpage) {
+        PRINT_ERR("no init\n");
+        return -1;
+    }
+
+    return page * block->page_size(block);
+}
+vpage *vblock_get_page_from_addr(vblock *block, int addr)
+{
+    if (!block) {
+        PRINT_ERR("%s() invalid args.\n", __func__);
+        return NULL;
+    } else if (addr > block->size(block)) {
+        PRINT_ERR("%s() invalid addr.\n", __func__);
+        return NULL;
+    }
+
+    int page = block->size(block) / addr;
+
+    return block->get_page(block, page);
+}
 vpage *vblock_get_page(vblock *block, int page_num)
 {
     if (!block || (page_num >= block->vpage_amt)) {
@@ -658,13 +693,13 @@ int vblock_read(vblock *block, int off, unsigned char *buffer, int size)
 
     return 0;
 }
-int vblock_write(vblock *block, int off, const unsigned char *buffer, int size)
+int vblock_write(vblock *block, unsigned int off, const unsigned char *buffer, unsigned int size)
 {
     if (!block || !buffer || !size) {
         PRINT_ERR("invalid args\n");
         return -1;
     } else if ((off + size) > block->size(block)) {
-        PRINT_ERR("overflow \n");
+        PRINT_ERR("block %d , off %d , size %d : overflow \n", block->seq, off, size);
         return -1;
     }
 
@@ -696,6 +731,12 @@ int vblock_write(vblock *block, int off, const unsigned char *buffer, int size)
     block->used = 1;
 
     return 0;
+}
+int vblock_addr(vblock *block)
+{
+    if (!block) { return 0; }
+
+    return block->seq * block->size(block);
 }
 int vblock_size(vblock *block)
 {
@@ -1188,6 +1229,9 @@ int vblock_init(vblock *block, int vpage_amt, int vunit_amt)
          
         page->seq = idx;
         block->vpage[idx] = page;
+        if (idx) {
+            block->vpage[idx - 1]->next = page;
+        }
     }
 
     return 0;
@@ -1234,8 +1278,11 @@ vblock *vblock_new(void)
     block->info = vblock_info;
 
     block->get_page = vblock_get_page;
+    block->get_page_from_addr = vblock_get_page_from_addr;
+    block->calc_page_addr = vblock_calc_page_addr;
 
     block->size = vblock_size;
+    block->addr = vblock_addr;
     block->page_size = vblock_page_size;
 
     block->erase = vblock_erase;
@@ -1499,7 +1546,6 @@ static long vflash_config_mapping_block_address(vflash *flash, int block, int of
 
     return data_off;
 }
-
 int vflash_config_block_update(vflash *flash, int block, int off, int size)
 {
     if (!flash) {
@@ -1521,8 +1567,6 @@ int vflash_config_block_update(vflash *flash, int block, int off, int size)
         PRINT_ERR("invalid file name, please import or export first.\n");
         return -1;
     }
-
-    PRINT("%s() block %d , off %d , int %d.\n", __func__, block, off, size);
 
     // jump to specific file address ( xxx.config address )
     long blk_off = vflash_config_mapping_block_address(flash, block, off);
@@ -1553,7 +1597,7 @@ int vflash_config_block_update(vflash *flash, int block, int off, int size)
     while(update_unit_numbers--) {
 
         vpage *wpage = wblock->get_page(wblock, pnum);
-        vunit *wunit = wpage->get_unit(wpage, unum);
+        vunit *wunit = &wpage->vunit[unum];
 
         if (fwrite(wunit, sizeof(vunit), 1, fd) != 1) {
             PRINT_ERR("fwrite failed : %s.\n", strerror(errno));
@@ -1626,6 +1670,525 @@ vblock *vflash_get_block(vflash *flash, int block_num)
     }
 
     return flash->vblock[block_num];
+}
+
+vblock *vflahs_get_block_from_addr(vflash *flash, int addr)
+{
+    if (!flash) {
+        PRINT_ERR("%s() invalid args.\n", __func__);
+        return NULL;
+    } else if (addr > flash->size(flash)) {
+        PRINT_ERR("%s() invalid addr.\n", __func__);
+        return NULL;
+    }
+
+    int block = flash->calc_block_from_addr(flash, addr);
+
+    return flash->get_block(flash, block);
+}
+int vflahs_calc_block_from_addr(vflash *flash, int addr)
+{
+    if (!flash) {
+        PRINT_ERR("%s() invalid args.\n", __func__);
+        return -1;
+    } else if (addr > flash->size(flash)) {
+        PRINT_ERR("%s() invliad addr.\n", __func__);
+        return -1;
+    }
+
+    return addr / flash->block_size(flash);
+}
+int vflahs_calc_page_from_addr(vflash *flash, int addr)
+{
+    if (!flash) {
+        PRINT_ERR("%s() invalid args.\n", __func__);
+        return -1;
+    } else if (addr > flash->size(flash)) {
+        PRINT_ERR("%s() invliad addr.\n", __func__);
+        return -1;
+    }
+
+    addr %= flash->block_size(flash);
+
+    return addr / flash->page_size(flash);
+}
+int vflahs_calc_unit_from_addr(vflash *flash, int addr)
+{
+    if (!flash) {
+        PRINT_ERR("%s() invalid args.\n", __func__);
+        return -1;
+    } else if (addr > flash->size(flash)) {
+        PRINT_ERR("%s() invliad addr.\n", __func__);
+        return -1;
+    }
+
+    addr %= flash->block_size(flash);
+    addr %= flash->page_size(flash);
+
+    return addr / sizeof(VUNIT_TYPE);
+}
+int vflash_calc_block_addr(vflash *flash, int blk)
+{
+    if (!flash || (blk >= flash->vblock_amt)) {
+        PRINT_ERR("invalid args , flash(%p) || get block(%d)\n", flash, blk);
+        return -1;
+    } else if (!flash->vblock) {
+        PRINT_ERR("no init.\n");
+        return -1;
+    }
+
+    return blk * flash->block_size(flash);
+}
+int vflash_rdump(vflash *flash, int unit_per_line, int addr, int size)
+{
+    if (!flash || !size) {
+        PRINT_ERR("%s() invalid args.\n", __func__);
+        return -1;
+    } else if ((addr + size) > flash->size(flash)) {
+        PRINT_ERR("%s() out of range.\n", __func__);
+        return -1;
+    }
+
+    range_line_bar(unit_per_line);
+    printf(" flash rdump %08d - %08d ( total xxxx bytes )\n", addr, addr + size);
+    range_line_bar(unit_per_line);
+    // -------------------------------------------------- ... 
+    // | flash rdump 00000000 - 00000000 ( total xxxx bytes )
+    // ---------------------------------------------
+    // | 00000000 - 00000000 | FFFFFFFF FFFFFFFF ... FFFFFFFF |
+
+    int blk = flash->calc_block_from_addr(flash, addr);
+    int pag = flash->calc_page_from_addr(flash, addr);
+    int uni = flash->calc_unit_from_addr(flash, addr);
+    vblock *block = flash->get_block(flash, blk);
+    vpage *page = block->get_page(block, pag);
+    int unit_amt = size / sizeof(VUNIT_TYPE);
+    if (size % sizeof(VUNIT_TYPE)) { unit_amt++; }
+
+    int uidx = 0;
+    do {
+
+        // | 00000000 - 00000000 |  
+        if (!(uidx % unit_per_line)) {
+            if (uidx) { printf("|\n"); }
+            printf("| %08d - %08d | ", addr + (uidx * 4), addr + ((uidx + unit_per_line) * 4));
+        }
+
+        //                         xxxxxxxx xxxxxxxx xxxxxxxx ... 
+        VUNIT_TYPE data = page->vunit[uni].data;
+        unsigned char *shw = (unsigned char *)&data;
+        shw += (sizeof(VUNIT_TYPE) - 1);
+        for (int sidx = 0; sidx < sizeof(VUNIT_TYPE); ++sidx) {
+            if ((*shw > ' ') && (*shw < '~')) {
+                printf(".%c", *shw);
+            } else {
+                printf("%02X", *shw);
+            }
+            shw--;
+        }
+        printf(" ");
+
+        uni++;
+
+        if ((uni) >= page->vunit_amt) {
+
+            uni = 0;
+            page = page->next;
+            if (!page) {
+                block = block->next;
+                if (!block) {
+                    if ((uidx + 1) != unit_amt) {
+                        PRINT_ERR("%s() not expect error !!\n", __func__);
+                        return -1;
+                    }
+                } else {
+                    page = block->get_page(block, 0);
+                    if (!page) {
+                        PRINT_ERR("%s() block get first page failed !!\n", __func__);
+                        return -1;
+                    }
+                }
+            }
+        }
+
+    } while (++uidx < unit_amt);
+
+    if (uidx % unit_per_line) {
+        int left = (unit_per_line - (uidx % unit_per_line));
+        for (int fill = 0; fill < left; ++fill) {
+            printf("         ");
+        }
+    }
+    printf("|\n");
+
+    range_line_bar(unit_per_line);
+
+    return 0;
+}
+int vflash_dump(vflash *flash, int unit_per_line, int addr, int size)
+{
+    if (!flash || !size) {
+        PRINT_ERR("%s() invalid args.\n", __func__);
+        return -1;
+    } else if ((addr + size) > flash->size(flash)) {
+        PRINT_ERR("%s() out of range.\n", __func__);
+        return -1;
+    }
+
+    // -------------------------------------------------- ... 
+    // | flash dump 00000000 - 00000000 ( total xxxx bytes )
+    // ---------------------------------------------
+    // | 00000000 - 00000000 | FFFFFFFF FFFFFFFF ... FFFFFFFF |
+
+    range_line_bar(unit_per_line);
+    printf(" flash dump %08d - %08d ( total xxxx bytes )\n", addr, addr + size);
+    range_line_bar(unit_per_line);
+
+    int blk = flash->calc_block_from_addr(flash, addr);
+    int pag = flash->calc_page_from_addr(flash, addr);
+    int uni = flash->calc_unit_from_addr(flash, addr);
+    vblock *block = flash->get_block(flash, blk);
+    vpage *page = block->get_page(block, pag);
+    int unit_amt = size / sizeof(VUNIT_TYPE);
+    if (size % sizeof(VUNIT_TYPE)) { unit_amt++; }
+
+    int uidx = 0;
+    do {
+
+        // | 00000000 - 00000000 |  
+        if (!(uidx % unit_per_line)) {
+            if (uidx) { printf("|\n"); }
+            printf("| %08d - %08d | ", addr + (uidx * 4), addr + ((uidx + unit_per_line) * 4));
+        }
+
+        //                         xxxxxxxx xxxxxxxx xxxxxxxx ... 
+        printf("%08X ", page->vunit[uni].data);
+
+        uni++;
+
+        if ((uni) >= page->vunit_amt) {
+
+            uni = 0;
+            page = page->next;
+            if (!page) {
+                block = block->next;
+                if (!block) {
+                    if ((uidx + 1) != unit_amt) {
+                        PRINT_ERR("%s() not expect error !!\n", __func__);
+                        return -1;
+                    }
+                } else {
+                    page = block->get_page(block, 0);
+                    if (!page) {
+                        PRINT_ERR("%s() block get first page failed !!\n", __func__);
+                        return -1;
+                    }
+                }
+            }
+        }
+
+    } while (++uidx < unit_amt);
+
+    if (uidx % unit_per_line) {
+        int left = (unit_per_line - (uidx % unit_per_line));
+        for (int fill = 0; fill < left; ++fill) {
+            printf("         ");
+        }
+    }
+    printf("|\n");
+
+    range_line_bar(unit_per_line);
+
+    return 0;
+}
+int vflash_info(vflash *flash, int unit_per_line, int align, int addr, int size)
+{
+    if (!flash || !size) {
+        PRINT_ERR("%s() invalid args.\n", __func__);
+        return -1;
+    } else if ((addr + size) > flash->size(flash)) {
+        PRINT_ERR("%s() out of range.\n", __func__);
+        return -1;
+    }
+
+
+    range_info_line_bar(unit_per_line, align);
+    printf(" flash info %08d - %08d ( total xxxx bytes )\n", addr, addr + size);
+    range_info_line_bar(unit_per_line, align);
+      
+    // | 00000000 - 00000000 | [■ (??,??)] [■ (???,???)] [■ (xx,oo)] |
+
+    char ufmt[32] = {0};
+    snprintf(ufmt, 32, "[■ (%%%dd,%%%dd)] ", align, align);
+
+    char nfmt[32] = {0};
+    snprintf(nfmt, 32, "[□ (%%%dd,%%%dd)] ", align, align);
+
+    int blk = flash->calc_block_from_addr(flash, addr);
+    int pag = flash->calc_page_from_addr(flash, addr);
+    int uni = flash->calc_unit_from_addr(flash, addr);
+    vblock *block = flash->get_block(flash, blk);
+    vpage *page = block->get_page(block, pag);
+    int unit_amt = size / sizeof(VUNIT_TYPE);
+    if (size % sizeof(VUNIT_TYPE)) { unit_amt++; }
+
+    int uidx = 0;
+    do {
+
+        // | 00000000 - 00000000 |  
+        if (!(uidx % unit_per_line)) {
+            if (uidx) { printf("|\n"); }
+            printf("| %08d - %08d | ", addr + (uidx * 4), addr + ((uidx + unit_per_line) * 4));
+        }
+
+        //                         xxxxxxxx xxxxxxxx xxxxxxxx ... 
+        if (page->vunit[uni].used) {
+            printf(ufmt, page->vunit[uni].erase, page->vunit[uni].write);
+        } else {
+            printf(nfmt, page->vunit[uni].erase, page->vunit[uni].write);
+        }
+        uni++;
+
+        if ((uni) >= page->vunit_amt) {
+
+            uni = 0;
+            page = page->next;
+            if (!page) {
+                block = block->next;
+                if (!block) {
+                    if ((uidx + 1) != unit_amt) {
+                        PRINT_ERR("%s() not expect error !!\n", __func__);
+                        return -1;
+                    }
+                } else {
+                    page = block->get_page(block, 0);
+                    if (!page) {
+                        PRINT_ERR("%s() block get first page failed !!\n", __func__);
+                        return -1;
+                    }
+                }
+            }
+        }
+
+    } while (++uidx < unit_amt);
+
+    if (uidx % unit_per_line) {
+        int left = (unit_per_line - (uidx % unit_per_line));
+        for (int fill = 0; fill < left; ++fill) {
+            printf("    ");
+            for (int an = 0; an < (align * 2 + 1); ++an) printf(" ");
+            printf("   ");
+        }
+    }
+    printf("|\n");
+
+    range_info_line_bar(unit_per_line, align);
+
+    return 0;
+}
+
+int vflash_read(vflash *flash, int addr, int size, unsigned char *buff)
+{
+    if (!flash || !buff || !size) {
+        PRINT_ERR("%s() invalid args.\n", __func__);
+        return -1;
+    } else if ((addr + size) > flash->size(flash)) {
+        PRINT_ERR("%s() out of range.\n", __func__);
+        return -1;
+    }
+
+    // |<- block ->|<- block ->|<- block ->|<- block ->|
+    //      ■■■■■■■ ■■■■■■■■■■■ ■■■■■■■■■■■ ■■■■■
+    //     | first |        middle         | end |
+
+    int blk = flash->calc_block_from_addr(flash, addr);
+    int pag = flash->calc_page_from_addr(flash, addr);
+    int uni = flash->calc_unit_from_addr(flash, addr);
+    vblock *block = flash->get_block(flash, blk);
+    if (!block) {
+        PRINT_ERR("%s() flash get block failed.\n", __func__);
+        return -1;
+    }
+    vpage *page = block->get_page(block, pag);
+    if (!page) {
+        PRINT_ERR("%s() block get page failed.\n", __func__);
+        return -1;
+    }
+
+    while(size > 0) {
+
+        VUNIT_TYPE tmp = page->get_unit(page, uni);
+        memcpy(buff, &tmp, sizeof(VUNIT_TYPE));
+
+        if (++uni == page->vunit_amt) {
+            uni = 0;
+            page = page->next;
+            if (!page) {
+                block = block->next;
+                if (!block) {
+                    PRINT_ERR("%s() wrong size ? .\n", __func__);
+                    return -1;
+                }
+                page = block->get_page(block, 0);
+            }
+        }
+        size -= sizeof(VUNIT_TYPE);
+        buff += sizeof(VUNIT_TYPE);
+
+    }
+
+    return 0;
+}
+int vflash_write(vflash *flash, unsigned int addr, unsigned int size, const unsigned char *buff)
+{
+    if (!flash || !buff || !size) {
+        PRINT_ERR("%s() invalid args.\n", __func__);
+        return -1;
+    } else if ((addr + size) > flash->size(flash)) {
+        PRINT_ERR("%s() out of range.\n", __func__);
+        return -1;
+    }
+
+    // |<- block ->|<- block ->|<- block ->|<- block ->|
+    //      ■■■■■■■ ■■■■■■■■■■■ ■■■■■■■■■■■ ■■■■■
+    //     | first |        middle         | end |
+
+    int blk = flash->calc_block_from_addr(flash, addr);
+    vblock *block = flash->get_block(flash, blk);
+    if (!block) {
+        PRINT_ERR("%s() flash get block from addr %d failed.\n", __func__, addr);
+        return -1;
+    }
+
+    int off = addr - block->addr(block);
+    int rsz = size;
+    if ((addr + rsz) > (block->addr(block) + block->size(block))) {
+        rsz = block->size(block) - off;
+    }
+
+    if (block->write(block, off, buff, rsz)) {
+        PRINT_ERR("%s() block write off %d , size %d failed.\n", __func__, off, rsz);
+        return -1;
+    } else {
+        size -= rsz;
+        buff += rsz;
+    }
+
+    // front part only
+    if (!size) {
+        return 0;
+    }
+
+    // middle part
+    rsz = block->size(block);
+    while(size > rsz) {
+        block = flash->get_block(flash, ++blk);
+        if (block->write(block, 0, buff, rsz)) {
+            PRINT_ERR("%s() block %d write off 0 size %d failed.\n", __func__, blk, rsz);
+            return -1;
+        }
+        size -= rsz;
+        buff += rsz;
+    }
+
+    if (!size) {
+        return 0;
+    }
+
+    // last part
+    block = flash->get_block(flash, ++blk);
+    if (block->write(block, 0, buff, size)) {
+        PRINT_ERR("%s() block %d write off 0 size %d failed.\n", __func__, blk, size);
+        return -1;
+    }
+
+    return 0;
+}
+int vflash_erase(vflash *flash, int addr, int size)
+{
+    if (!flash || !size) {
+        PRINT_ERR("%s() invalid args.\n", __func__);
+        return -1;
+    } else if (addr % flash->block_size(flash)) {
+        PRINT_ERR("%s() addr not align (block size %d).\n", __func__, flash->block_size(flash));
+        return -1;
+    } else if (size % flash->block_size(flash)) {
+        PRINT_ERR("%s() size not align (block size %d).\n", __func__, flash->block_size(flash));
+        return -1;
+    }
+
+    int count = 0;
+
+    while(count != size) {
+        vblock *block = flash->get_block_from_addr(flash, addr);
+        block->erase(block);
+        addr += flash->block_size(flash);
+        count += flash->block_size(flash);
+    }
+
+    return 0;
+}
+
+int vflash_config_update(vflash *flash, int addr, int size)
+{
+    if (!flash || !size) {
+        PRINT_ERR("%s() invalid args.\n", __func__);
+        return -1;
+    } else if ((addr + size) > flash->size(flash)) {
+        PRINT_ERR("%s() out of range.\n", __func__);
+        return -1;
+    }
+
+    // |<- block ->|<- block ->|<- block ->|<- block ->|
+    //      ■■■■■■■ ■■■■■■■■■■■ ■■■■■■■■■■■ ■■■■■
+    //     | first |        middle         | end |
+
+    int blk = flash->calc_block_from_addr(flash, addr);
+    vblock *block = flash->get_block(flash, blk);
+    if (!block) {
+        PRINT_ERR("%s() flash get block from addr %d failed.\n", __func__, addr);
+        return -1;
+    }
+
+    int off = addr - block->addr(block);
+    int rsz = size;
+    if ((addr + rsz) > (block->addr(block) + block->size(block))) {
+        rsz = block->size(block) - off;
+    }
+
+    if (flash->fblock_update(flash, blk, off, rsz)) {
+        PRINT_ERR("%s() flash update blk %d off %d , size %d failed.\n", __func__, blk, off, rsz);
+        return -1;
+    } else {
+        size -= rsz;
+    }
+
+    // front part only
+    if (!size) {
+        return 0;
+    }
+
+    // middle part
+    rsz = block->size(block);
+    while(size > rsz) {
+        if (flash->fblock_update(flash, ++blk, 0, rsz)) {
+            PRINT_ERR("%s() flash update blk %d off 0 , size %d failed.\n", __func__, blk, rsz);
+            return -1;
+        }
+        size -= rsz;
+    }
+
+    if (!size) {
+        return 0;
+    }
+
+    // last part
+    if (flash->fblock_update(flash, ++blk, 0, size)) {
+        PRINT_ERR("%s() flash update blk %d off 0 , size %d failed.\n", __func__, blk, size);
+        return -1;
+    }
+
+    return 0;
 }
 
 int vflash_size(vflash *flash)
@@ -1749,6 +2312,9 @@ int vflash_init(vflash *flash, int vblock_amt, int vpage_amt, int vunit_amt)
 
         block->seq = idx;
         flash->vblock[idx] = block;
+        if (idx) {
+            flash->vblock[idx - 1]->next = block;
+        }
     }
 
     return 0;
@@ -1832,6 +2398,11 @@ vflash *vflash_new(void)
     flash->unit_size = vflash_unit_size;
 
     flash->get_block = vflash_get_block;
+    flash->get_block_from_addr = vflahs_get_block_from_addr;
+    flash->calc_block_addr = vflash_calc_block_addr;
+    flash->calc_block_from_addr = vflahs_calc_block_from_addr;
+    flash->calc_page_from_addr = vflahs_calc_page_from_addr;
+    flash->calc_unit_from_addr = vflahs_calc_unit_from_addr;
 
     // new feature 2022 08 23
     flash->fdump = vflash_file_dump;
@@ -1840,11 +2411,21 @@ vflash *vflash_new(void)
     // new feature 2022 08 30
     flash->fimport = vflash_config_import;
     flash->fexport = vflash_config_export;
+
+    flash->fupdate = vflash_config_update;
     flash->fblock_update = vflash_config_block_update;
     flash->fpage_update = vflash_config_page_update;
 
     flash->check_addr = vflash_check_addr;
     flash->check_val = vflash_check_val;
+
+    flash->read = vflash_read;
+    flash->write = vflash_write;
+    flash->erase = vflash_erase;
+
+    flash->dump = vflash_dump;
+    flash->rdump = vflash_rdump;
+    flash->info = vflash_info;
 
     return flash;
 }

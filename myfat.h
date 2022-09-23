@@ -5,6 +5,10 @@
 #include "ff_gen_drv.h"
 #include "vflash.h"
 
+#include <stddef.h>
+#define container_of(ptr, type, member) \
+    ({ const typeof( ((type *)0)->member ) *__mptr = (ptr); \
+     (type *)( (char *)__mptr - offsetof(type,member) ); })
 
 typedef struct _myfat_dev {
 
@@ -78,5 +82,6 @@ myfat *myfat_new(void);
 
 // for fat_core get RTC time
 DWORD get_fattime(void);
+myfat_dev *find_fat_by_id(BYTE id);
 
 #endif

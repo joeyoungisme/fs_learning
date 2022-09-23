@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <errno.h>
 
 #include "opt.h"
 #include "timer.h"
@@ -10,221 +11,11 @@
 
 #include "ff.h"
 
-static int get_rand_data(unsigned char *data, int size)
-{
-    if (!data) return 0;
-    if (!size) return 0;
-    memset(data, 'A' + (rand() % ('Z' - 'A')), size);
-    return size;
-}
-
-int myfs_mkdir_example(myfs *fs)
-{
-    if (!fs) {
-        return -1;
-    }
-
-    if (fs->mkdir(fs, "00")) {
-        PRINT_ERR("%s() fs mkdir 00 failed\n", __func__);
-        return -1;
-    }
-    if (fs->mkdir(fs, "01")) {
-        PRINT_ERR("%s() fs mkdir 01 failed\n", __func__);
-        return -1;
-    }
-
-    return 0;
-}
-
-int myfs_dirlist_example(myfs *fs, char *path)
-{
-    if (!fs) {
-        return -1;
-    }
-
-    myfs_dir dir;
-    myfs_file_info info;
-
-    char root[] = "/";
-
-    if (!path) {
-        path = root;
-    }
-
-    if (fs->opendir(fs, &dir, path)) {
-        PRINT_ERR("%s() fs opendir failed\n", __func__);
-        return -1;
-    }
-
-    printf("--------\r\nPATH : %s\r\n", path);
-    uint32_t totalFiles = 0;
-    uint32_t totalDirs = 0;
-    for(;;) {
-
-        int rc = fs->readdir(fs, &dir, &info);
-
-        if (fs->type == MYFS_LITTLEFS) {
-            if (rc < 0) {
-                PRINT_ERR("%s() readdir failed (%d).\n", __func__, rc);
-                return -1;
-            } else if (!rc) {
-                break;
-            } else if (info.lfs.type & LFS_TYPE_DIR) {
-                printf("[LFS] DIR  %s\r\n", info.lfs.name);
-                totalDirs++;
-            } else {
-                printf("[LFS] FILE %s (%d byte)\r\n", info.lfs.name, info.lfs.size);
-                totalFiles++;
-            }
-        } else if (fs->type == MYFS_FATFS) {
-            if (rc) {
-                break;
-            } else if (info.fat.fname[0] == '\0') {
-                break;
-            } else if (info.fat.fattrib & AM_DIR) {
-                printf("[FAT] DIR  %s\r\n", info.fat.fname);
-                totalDirs++;
-            } else {
-                printf("[FAT] FILE %s (%ld byte)\r\n", info.fat.fname, info.fat.fsize);
-                totalFiles++;
-            }
-        } else {
-            break;
-        }
-    }
-    printf("(total: %u dirs, %u files)\r\n--------\r\n", totalDirs, totalFiles);
-
-    if (fs->closedir(fs, &dir)) {
-        PRINT_ERR("%s() fs closedir failed\n", __func__);
-        return -1;
-    }
-
-    return 0;
-}
-int myfs_write_log_example(myfs *fs, char *file_name, int writesize)
-{
-    if (!fs || !file_name) {
-        return -1;
-    }
-
-    myfs_file file;
-
-    printf("Writing to \"%s\" ...\r\n", file_name);
-
-    int flag = 0;
-    if (fs->type == MYFS_LITTLEFS) {
-        flag = LFS_O_RDWR | LFS_O_CREAT | LFS_O_APPEND;
-    } else if (fs->type == MYFS_FATFS) {
-        flag = FA_OPEN_APPEND | FA_WRITE;
-    }
-
-    if (fs->open(fs, &file, file_name, flag)) {
-        PRINT_ERR("%s() open failed.\n", __func__);
-        return -1;
-    }
-
-    char *writeBuff = (char *)malloc(sizeof(char) * writesize);
-    memset(writeBuff, 0, (sizeof(char) * writesize));
-    int bytesToWrite = get_rand_data(writeBuff, writesize);
-    // PRINT("myfs write (%d) : \n------\n%s\n------\n", bytesToWrite, writeBuff);
-    int res = fs->write(fs, &file, writeBuff, bytesToWrite);
-    free(writeBuff);
-
-    if (fs->close(fs, &file)) {
-        PRINT_ERR("%s() close failed.\n", __func__);
-    }
-
-    if (res < 0) {
-        PRINT_ERR("%s() write failed.\n", __func__);
-        return -1;
-    }
-
-    return 0;
-}
-int myfs_read_log_example(myfs *fs, char *file_name)
-{
-    if (!fs || !file_name) {
-        return -1;
-    }
-
-    myfs_file file;
-
-    printf("Reading file...\r\n");
-
-    if (fs->open(fs, &file, file_name, LFS_O_RDWR | LFS_O_CREAT)) {
-        PRINT_ERR("%s() open failed.\n", __func__);
-        return -1;
-    }
-
-    // printf("```\r\n");
-    for(;;)
-    {
-        char readBuff[512];
-        int rlen = fs->read(fs, &file, readBuff, sizeof(readBuff)-1);
-        if (rlen < 0) {
-            // PRINT_ERR("%s() read failed.\n", __func__);
-            return -1;
-        } else if (!rlen) {
-            break;
-        }
-        readBuff[rlen] = '\0';
-        // printf("%s", readBuff);
-    }
-    // printf("\r\n```\r\n");
-
-    if (fs->close(fs, &file)) {
-        PRINT_ERR("%s() close failed.\n", __func__);
-        return -1;
-    }
-
-    return 0;
-}
-int myfs_show_log_example(myfs *fs, char *file_name)
-{
-    if (!fs || !file_name) {
-        return -1;
-    }
-
-    myfs_file file;
-
-    printf("Reading file...\r\n");
-
-    if (fs->open(fs, &file, file_name, LFS_O_RDWR | LFS_O_CREAT)) {
-        PRINT_ERR("%s() open failed.\n", __func__);
-        return -1;
-    }
-
-    printf("```\r\n");
-    for(;;)
-    {
-        char readBuff[512];
-        int rlen = fs->read(fs, &file, readBuff, sizeof(readBuff)-1);
-        if (rlen < 0) {
-            // PRINT_ERR("%s() read failed.\n", __func__);
-            return -1;
-        } else if (!rlen) {
-            break;
-        }
-        readBuff[rlen] = '\0';
-        printf("%s", readBuff);
-    }
-    printf("\r\n```\r\n");
-
-    if (fs->close(fs, &file)) {
-        PRINT_ERR("%s() close failed.\n", __func__);
-        return -1;
-    }
-
-    return 0;
-}
-
-int myfs_big_file_procedure(myfs *fs)
-{
-}
+#define TAB_STR             "    "
 
 int myfs_lfs_init(myfs **lfs, int blk, int pag, int unit)
 {
-    PRINT("!! LFS INIT !!\r\n");
+    PRINT("!! LFS INIT !!\n");
 
     *lfs = myfs_new();
     if (!(*lfs)) {
@@ -252,7 +43,7 @@ int myfs_lfs_init(myfs **lfs, int blk, int pag, int unit)
 
 void lfs_uninit(myfs **lfs)
 {
-    PRINT("!! LFS UNINIT !!\r\n");
+    PRINT("!! LFS UNINIT !!\n");
 
     if ((*lfs)->unmount((*lfs))) {
         PRINT_ERR("%s() unmount failed.\n", __func__);
@@ -264,7 +55,7 @@ void lfs_uninit(myfs **lfs)
 
 int myfs_fat_init(myfs **fatfs, int blk, int pag, int unit)
 {
-    PRINT("!! FAT INIT !!\r\n");
+    PRINT("!! FAT INIT !!\n");
 
     uint32_t freeClust = 0;
     uint32_t totalBlocks = 0;
@@ -296,17 +87,17 @@ int myfs_fat_init(myfs **fatfs, int blk, int pag, int unit)
     totalBlocks = ((*fatfs)->fat->head->core.n_fatent - 2) * (*fatfs)->fat->head->core.csize;
     freeBlocks = freeClust * (*fatfs)->fat->head->core.csize;
 
-    PRINT("Free Cluster: %u \r\n", freeClust);
-    PRINT("number of clusters: %ld \r\n", (*fatfs)->fat->head->core.n_fatent - 2);
-    PRINT("sector per cluster: %u \r\n", (*fatfs)->fat->head->core.csize);
-    PRINT("Total blocks: %u (%u Mb)\r\n", totalBlocks, totalBlocks / 2000);
-    PRINT("Free blocks: %u (%u Mb)\r\n", freeBlocks, freeBlocks / 2000);
+    PRINT_RAW("Free Cluster: %u \n", freeClust);
+    PRINT_RAW("number of clusters: %ld \n", (*fatfs)->fat->head->core.n_fatent - 2);
+    PRINT_RAW("sector per cluster: %u \n", (*fatfs)->fat->head->core.csize);
+    PRINT_RAW("Total blocks: %u (%u Mb)\n", totalBlocks, totalBlocks / 2000);
+    PRINT_RAW("Free blocks: %u (%u Mb)\n", freeBlocks, freeBlocks / 2000);
 
     return 0;
 }
 void fat_uninit(myfs **fat)
 {
-    PRINT("!! FAT UNINIT !!\r\n");
+    PRINT("!! FAT UNINIT !!\n");
 
     if ((*fat)->unmount((*fat))) {
         PRINT_ERR("%s() unmount failed.\n", __func__);
@@ -328,6 +119,12 @@ static unsigned char remove_flag = 0;
 static unsigned char cycle_flag = 0;
 // --w
 static unsigned char write_flag = 0;
+// --get
+static unsigned char get_file_flag = 0;
+static char get_file_path[512] = {0};
+// --put
+static unsigned char put_file_flag = 0;
+static char put_file_path[512] = {0};
 // --chk
 static unsigned char check_flag = 0;
 // --wcnt [count]
@@ -481,6 +278,21 @@ int opt_cycle(char *args)
 
     return 0;
 }
+int opt_putfile(char *args)
+{
+    put_file_flag = 1;
+    memset(put_file_path, 0, sizeof(put_file_path));
+    snprintf(put_file_path, sizeof(put_file_path), "%s", args);
+    return 0;
+}
+int opt_getfile(char *args)
+{
+    get_file_flag = 1;
+    memset(get_file_path, 0, sizeof(get_file_path));
+    snprintf(get_file_path, sizeof(get_file_path), "%s", args);
+    return 0;
+}
+
 int opt_write(char *args)
 {
     PRINT("%s\n", args);
@@ -545,6 +357,12 @@ void opt_init(void)
     opt.name = "file"; opt.has_arg = required_argument;
     opt_reg(opt, opt_file, "open file by file name");
 
+    opt.name = "put"; opt.has_arg = required_argument;
+    opt_reg(opt, opt_putfile, "put file from pc to fs , please add --file [file name]");
+
+    opt.name = "get"; opt.has_arg = required_argument;
+    opt_reg(opt, opt_getfile, "get file from fs to pc , please add --file [file name]");
+
     opt.name = "rm"; opt.has_arg = no_argument;
     opt_reg(opt, opt_remove, "remove file , please add --file [file name]");
 
@@ -564,32 +382,35 @@ int test_dump_info(myfs *fs)
 {
     // info ( .info )
     vflash *flash = fs->get_flash(fs);
+
+    flash->info(flash, dnl_flag, dal_flag, 0, flash->size(flash));
+
     // raw ( .dump )
-    if (dblk_flag < 0) {
+//  if (dblk_flag < 0) {
 
-        for (int bidx = 0; bidx < flash->vblock_amt; ++bidx) {
-            vblock *block = flash->get_block(flash, bidx);
+//      for (int bidx = 0; bidx < flash->vblock_amt; ++bidx) {
+//          vblock *block = flash->get_block(flash, bidx);
 
-            if (dpag_flag < 0) {
-                PRINT("Dump Flash Info : Block %d.\n", bidx);
-                block->info(block, dnl_flag, dal_flag);
-            } else {
-                PRINT("Dump Flash Info : Block %d, Page %d.\n", bidx, dpag_flag);
-                vpage *page = block->get_page(block, dpag_flag);
-                page->info(page, dnl_flag, dal_flag);
-            }
-        }
-    } else {
-        vblock *block = flash->get_block(flash, dblk_flag);
-        if (dpag_flag < 0) {
-            PRINT("Dump Flash Info : Block %d.\n", dblk_flag);
-            block->info(block, dnl_flag, dal_flag);
-        } else {
-            PRINT("Dump Flash Info : Block %d, Page %d.\n", dblk_flag, dpag_flag);
-            vpage *page = block->get_page(block, dpag_flag);
-            page->info(page, dnl_flag, dal_flag);
-        }
-    }
+//          if (dpag_flag < 0) {
+//              PRINT("Dump Flash Info : Block %d.\n", bidx);
+//              block->info(block, dnl_flag, dal_flag);
+//          } else {
+//              PRINT("Dump Flash Info : Block %d, Page %d.\n", bidx, dpag_flag);
+//              vpage *page = block->get_page(block, dpag_flag);
+//              page->info(page, dnl_flag, dal_flag);
+//          }
+//      }
+//  } else {
+//      vblock *block = flash->get_block(flash, dblk_flag);
+//      if (dpag_flag < 0) {
+//          PRINT("Dump Flash Info : Block %d.\n", dblk_flag);
+//          block->info(block, dnl_flag, dal_flag);
+//      } else {
+//          PRINT("Dump Flash Info : Block %d, Page %d.\n", dblk_flag, dpag_flag);
+//          vpage *page = block->get_page(block, dpag_flag);
+//          page->info(page, dnl_flag, dal_flag);
+//      }
+//  }
 
     return 0;
 }
@@ -597,64 +418,70 @@ int test_dump_read(myfs *fs)
 {
     // rraw ( .rdump )
     vflash *flash = fs->get_flash(fs);
+
+    flash->rdump(flash, dnl_flag, 0, flash->size(flash));
+
     // raw ( .dump )
-    if (dblk_flag < 0) {
+//  if (dblk_flag < 0) {
 
-        for (int bidx = 0; bidx < flash->vblock_amt; ++bidx) {
-            vblock *block = flash->get_block(flash, bidx);
+//      for (int bidx = 0; bidx < flash->vblock_amt; ++bidx) {
+//          vblock *block = flash->get_block(flash, bidx);
 
-            if (dpag_flag < 0) {
-                PRINT("Dump Flash Info : Block %d.\n", bidx);
-                block->rdump(block, dnl_flag);
-            } else {
-                PRINT("Dump Flash Info : Block %d, Page %d.\n", bidx, dpag_flag);
-                vpage *page = block->get_page(block, dpag_flag);
-                page->rdump(page, dnl_flag);
-            }
-        }
-    } else {
-        vblock *block = flash->get_block(flash, dblk_flag);
-        if (dpag_flag < 0) {
-            PRINT("Dump Flash Info : Block %d.\n", dblk_flag);
-            block->rdump(block, dnl_flag);
-        } else {
-            PRINT("Dump Flash Info : Block %d, Page %d.\n", dblk_flag, dpag_flag);
-            vpage *page = block->get_page(block, dpag_flag);
-            page->rdump(page, dnl_flag);
-        }
-    }
+//          if (dpag_flag < 0) {
+//              PRINT("Dump Flash Info : Block %d.\n", bidx);
+//              block->rdump(block, dnl_flag);
+//          } else {
+//              PRINT("Dump Flash Info : Block %d, Page %d.\n", bidx, dpag_flag);
+//              vpage *page = block->get_page(block, dpag_flag);
+//              page->rdump(page, dnl_flag);
+//          }
+//      }
+//  } else {
+//      vblock *block = flash->get_block(flash, dblk_flag);
+//      if (dpag_flag < 0) {
+//          PRINT("Dump Flash Info : Block %d.\n", dblk_flag);
+//          block->rdump(block, dnl_flag);
+//      } else {
+//          PRINT("Dump Flash Info : Block %d, Page %d.\n", dblk_flag, dpag_flag);
+//          vpage *page = block->get_page(block, dpag_flag);
+//          page->rdump(page, dnl_flag);
+//      }
+//  }
 
     return 0;
 }
 int test_dump_raw(myfs *fs)
 {
     vflash *flash = fs->get_flash(fs);
-    // raw ( .dump )
-    if (dblk_flag < 0) {
 
-        for (int bidx = 0; bidx < flash->vblock_amt; ++bidx) {
-            vblock *block = flash->get_block(flash, bidx);
+    flash->dump(flash, dnl_flag, 0, flash->size(flash));
 
-            if (dpag_flag < 0) {
-                PRINT("Dump Flash Info : Block %d.\n", bidx);
-                block->dump(block, dnl_flag);
-            } else {
-                PRINT("Dump Flash Info : Block %d, Page %d.\n", bidx, dpag_flag);
-                vpage *page = block->get_page(block, dpag_flag);
-                page->dump(page, dnl_flag);
-            }
-        }
-    } else {
-        vblock *block = flash->get_block(flash, dblk_flag);
-        if (dpag_flag < 0) {
-            PRINT("Dump Flash Info : Block %d.\n", dblk_flag);
-            block->dump(block, dnl_flag);
-        } else {
-            PRINT("Dump Flash Info : Block %d, Page %d.\n", dblk_flag, dpag_flag);
-            vpage *page = block->get_page(block, dpag_flag);
-            page->dump(page, dnl_flag);
-        }
-    }
+//  // raw ( .dump )
+//  if (dblk_flag < 0) {
+
+//      for (int bidx = 0; bidx < flash->vblock_amt; ++bidx) {
+//          vblock *block = flash->get_block(flash, bidx);
+
+//          if (dpag_flag < 0) {
+//              PRINT("Dump Flash Info : Block %d.\n", bidx);
+//              block->dump(block, dnl_flag);
+//          } else {
+//              PRINT("Dump Flash Info : Block %d, Page %d.\n", bidx, dpag_flag);
+//              vpage *page = block->get_page(block, dpag_flag);
+//              page->dump(page, dnl_flag);
+//          }
+//      }
+//  } else {
+//      vblock *block = flash->get_block(flash, dblk_flag);
+//      if (dpag_flag < 0) {
+//          PRINT("Dump Flash Info : Block %d.\n", dblk_flag);
+//          block->dump(block, dnl_flag);
+//      } else {
+//          PRINT("Dump Flash Info : Block %d, Page %d.\n", dblk_flag, dpag_flag);
+//          vpage *page = block->get_page(block, dpag_flag);
+//          page->dump(page, dnl_flag);
+//      }
+//  }
 
     return 0;
 }
@@ -724,7 +551,7 @@ int test_write(myfs *fs)
                     tm_set_ms(&stimer, 0);
                     fs->sync(fs, &file);
                     PRINT("SYNC : every %d times.\n", times_of_sync);
-                    PRINT("SYNC   Spent %d ms.\n", tm_stopwatch(stimer));
+                    PRINT_RAW("SYNC   Spent %d ms.\n", tm_stopwatch(stimer));
                 }
             } while(infinity_flag || --count);
         }
@@ -738,6 +565,307 @@ int test_write(myfs *fs)
     }
     PRINT("Total Write %d bytes.\n", w_total);
     return tm_stopwatch(wtimer);
+}
+
+int test_copy_to_fs(myfs *fs, FILE *fd)
+{
+    if (!fs || !fd) {
+        PRINT_ERR("%s() invalid args.\n", __func__);
+        return -1;
+    }
+
+    Timer ptimer;
+    // Timer stimer;
+
+    unsigned char copy_buff[2048] = {0};
+
+    tm_set_ms(&ptimer, 0);
+    while(1)
+    {
+        int rlen = fread(copy_buff, sizeof(unsigned char), 2048, fd);
+        if (rlen < 0) {
+            PRINT_ERR("%s() fread failed : %s.\n", __func__, strerror(errno));
+            return -1;
+        } else if (!rlen) {
+            break;
+        }
+
+        int wlen = fs->write(fs, &file, copy_buff, rlen);
+        if (wlen < 0) {
+            PRINT_ERR("%s() fs write failed.\n", __func__);
+            return -1;
+        }
+
+        if (rlen != wlen) {
+            PRINT_ERR("%s() read write size mismatch r %d byte , w %d byte.\n", __func__, rlen, wlen);
+            return -1;
+        }
+    }
+
+    return tm_stopwatch(ptimer);
+}
+int test_copy_from_fs(myfs *fs, FILE *fd)
+{
+    if (!fs || !fd) {
+        PRINT_ERR("%s() invalid args.\n", __func__);
+        return -1;
+    }
+
+    Timer gtimer;
+    // Timer stimer;
+
+    unsigned char copy_buff[2048] = {0};
+
+    tm_set_ms(&gtimer, 0);
+    while(1)
+    {
+        int rlen = fs->read(fs, &file, copy_buff, sizeof(copy_buff));
+        if (rlen < 0) {
+            PRINT_ERR("%s() read failed.\n", __func__);
+            break;
+        } else if (!rlen) {
+            break;
+        }
+        int wlen = fwrite(copy_buff, sizeof(unsigned char), rlen, fd);
+        if (wlen < 0) {
+            PRINT_ERR("%s() fwrite failed : %s\n", __func__, strerror(errno));
+        }
+        
+        if (rlen != wlen) {
+            PRINT_ERR("%s() read write size mismatch r %d byte , w %d byte.\n", __func__, rlen, wlen);
+            return -1;
+        }
+    }
+
+    return tm_stopwatch(gtimer);
+}
+int test_get_file(myfs *fs)
+{
+    if (!fs) {
+        return -1;
+    }
+
+    FILE *output = fopen(get_file_path, "wb");
+    if (!output) {
+        PRINT_ERR("%s() fopen failed : %s\n", __func__, strerror(errno));
+        return -1;
+    }
+
+    myfs_file file;
+
+    if (fs->open(fs, &file, file_name, LFS_O_RDWR)) {
+        PRINT_ERR("%s() open failed.\n", __func__);
+        return -1;
+    }
+
+    for(;;)
+    {
+        char readBuff[512];
+        int rlen = fs->read(fs, &file, readBuff, sizeof(readBuff)-1);
+        if (rlen < 0) {
+            PRINT_ERR("%s() read failed.\n", __func__);
+            break;
+        } else if (!rlen) {
+            break;
+        }
+        if (fwrite(readBuff, rlen, 1, output) != 1) {
+            PRINT_ERR("%s() fwrite failed : %s\n", __func__, strerror(errno));
+        }
+    }
+
+    if (fs->close(fs, &file)) {
+        PRINT_ERR("%s() close failed.\n", __func__);
+        return -1;
+    }
+
+    fclose(output);
+
+    return 0;
+}
+
+int test_show_file(myfs *fs)
+{
+    if (!fs) {
+        return -1;
+    }
+
+    myfs_file file;
+
+    if (fs->open(fs, &file, file_name, LFS_O_RDWR | LFS_O_CREAT)) {
+        PRINT_ERR("%s() open failed.\n", __func__);
+        return -1;
+    }
+
+    PRINT_RAW("```\n");
+    for(;;)
+    {
+        char readBuff[512];
+        int rlen = fs->read(fs, &file, readBuff, sizeof(readBuff)-1);
+        if (rlen < 0) {
+            // PRINT_ERR("%s() read failed.\n", __func__);
+            return -1;
+        } else if (!rlen) {
+            break;
+        }
+        readBuff[rlen] = '\0';
+        PRINT_RAW("%s", readBuff);
+    }
+    PRINT_RAW("\n```\n");
+
+    if (fs->close(fs, &file)) {
+        PRINT_ERR("%s() close failed.\n", __func__);
+        return -1;
+    }
+
+    return 0;
+}
+
+int test_list_dir(myfs *fs, char *path, int tab);
+int test_list_file(myfs *fs, char *path, int tab);
+int test_list_all(myfs *fs, char *path, int tab);
+
+int test_list_dir(myfs *fs, char *path, int tab)
+{
+    if (!fs || !path) {
+        return -1;
+    }
+
+    myfs_dir dir;
+    myfs_file_info info;
+
+    if (fs->opendir(fs, &dir, path)) {
+        PRINT_ERR("%s() fs opendir failed\n", __func__);
+        return -1;
+    }
+
+    int totalDirs = 0;
+
+    for(;;) {
+
+        int rc = fs->readdir(fs, &dir, &info);
+
+        if (fs->type == MYFS_LITTLEFS) {
+            if (rc < 0) {
+                PRINT_ERR("%s() readdir failed (%d).\n", __func__, rc);
+                return -1;
+            } else if (!rc) {
+                break;
+            } else if (info.lfs.type & LFS_TYPE_DIR) {
+                for (int tidx = 0; tidx < tab; ++tidx) { PRINT_RAW(TAB_STR); }
+                PRINT_RAW("[LFS] [DIR]  %s\n", info.lfs.name);
+                if (!strcmp(info.lfs.name, ".")) {
+                } else if (!strcmp(info.lfs.name, "..")) {
+                } else {
+                    char sub_path[280] = {0};
+                    snprintf(sub_path, 280, "%s/%s", path, info.lfs.name);
+                    test_list_all(fs, sub_path, tab + 1);
+                }
+                totalDirs++;
+            }
+        } else if (fs->type == MYFS_FATFS) {
+            if (rc) {
+                break;
+            } else if (info.fat.fname[0] == '\0') {
+                break;
+            } else if (info.fat.fattrib & AM_DIR) {
+                for (int tidx = 0; tidx < tab; ++tidx) { PRINT_RAW(TAB_STR); }
+                PRINT_RAW("[FAT] [DIR]  [%04d/%02d/%02d %02d:%02d:%02d] ",
+                        (info.fat.fdate >> 9) + 1980, (info.fat.fdate >> 5) & 0x0F, (info.fat.fdate & 0x1F),
+                        ((info.fat.ftime >> 11) & 0x1F) - 1, (info.fat.ftime >> 5) & 0x3F, (info.fat.ftime & 0x1F) * 2);
+                PRINT_RAW("%s\n", info.fat.fname);
+                char sub_path[64] = {0};
+                snprintf(sub_path, 64, "%s/%s", path, info.fat.fname);
+                test_list_all(fs, sub_path, tab + 1);
+                totalDirs++;
+            }
+        } else {
+            break;
+        }
+    }
+
+    if (fs->closedir(fs, &dir)) {
+        PRINT_ERR("%s() fs closedir failed\n", __func__);
+        return -1;
+    }
+
+    return totalDirs;
+}
+int test_list_file(myfs *fs, char *path, int tab)
+{
+    if (!fs || !path) {
+        return -1;
+    }
+
+    myfs_dir dir;
+    myfs_file_info info;
+
+    if (fs->opendir(fs, &dir, path)) {
+        PRINT_ERR("%s() fs opendir failed\n", __func__);
+        return -1;
+    }
+
+    uint32_t totalFiles = 0;
+
+    for(;;) {
+
+        int rc = fs->readdir(fs, &dir, &info);
+
+        if (fs->type == MYFS_LITTLEFS) {
+            if (rc < 0) {
+                PRINT_ERR("%s() readdir failed (%d).\n", __func__, rc);
+                return -1;
+            } else if (!rc) {
+                break;
+            } else if (!(info.lfs.type & LFS_TYPE_DIR)) {
+                for (int tidx = 0; tidx < tab; ++tidx) { PRINT_RAW(TAB_STR); }
+                PRINT_RAW("[LFS] [FILE] %s (%d byte)\n", info.lfs.name, info.lfs.size);
+                totalFiles++;
+            }
+        } else if (fs->type == MYFS_FATFS) {
+
+            if (rc) {
+                break;
+            } else if (info.fat.fname[0] == '\0') {
+                break;
+            } else if (!(info.fat.fattrib & AM_DIR)) {
+                for (int tidx = 0; tidx < tab; ++tidx) { PRINT_RAW(TAB_STR); }
+                PRINT_RAW("[FAT] [FILE] [%04d/%02d/%02d %02d:%02d:%02d] ",
+                        (info.fat.fdate >> 9) + 1980, (info.fat.fdate >> 5) & 0x0F, (info.fat.fdate & 0x1F),
+                        ((info.fat.ftime >> 11) & 0x1F) - 1, (info.fat.ftime >> 5) & 0x3F, (info.fat.ftime & 0x1F) * 2);
+                PRINT_RAW("%s (%ld byte)\n", info.fat.fname, info.fat.fsize);
+                totalFiles++;
+            }
+        } else {
+            break;
+        }
+    }
+
+    if (fs->closedir(fs, &dir)) {
+        PRINT_ERR("%s() fs closedir failed\n", __func__);
+        return -1;
+    }
+
+    return totalFiles;
+}
+int test_list_all(myfs *fs, char *path, int tab)
+{
+    if (!fs) {
+        return -1;
+    }
+
+    char root[] = "/";
+
+    if (!path) {
+        path = root;
+    }
+
+    int totalDirs = test_list_dir(fs, path, tab);
+    int totalFiles = test_list_file(fs, path, tab);
+
+    for (int tidx = 0; tidx < tab; ++tidx) { PRINT_RAW(TAB_STR); }
+    PRINT_RAW("[TOTAL : %u dirs, %u files]\n", totalDirs, totalFiles);
+
+    return 0;
 }
 
 int main(int argc, char *argv[])
@@ -757,9 +885,9 @@ int main(int argc, char *argv[])
 
     myfs *fs = NULL;
 
-    Timer init_timer;
-    unsigned int init_spent = 0;
-    tm_set_ms(&init_timer, 0);
+    Timer itimer;
+    unsigned int ispent = 0;
+    tm_set_ms(&itimer, 0);
     if (type == MYFS_LITTLEFS) {
         if (myfs_lfs_init(&fs, 32, 64, 512)) {
             exit(EXIT_FAILURE);
@@ -772,8 +900,8 @@ int main(int argc, char *argv[])
         PRINT_ERR("Unknown type.\n");
         exit(EXIT_FAILURE);
     }
-    init_spent = tm_stopwatch(init_timer);
-    PRINT("INIT   Spent %d ms.\n", init_spent);
+    ispent = tm_stopwatch(itimer);
+    PRINT_RAW("INIT   Spent %d ms.\n", ispent);
 
     if (check_flag) {
         vflash *flash = fs->get_flash(fs);
@@ -795,7 +923,7 @@ int main(int argc, char *argv[])
         if (rspent < 0) {
             PRINT_ERR("%s() remove failed.\n", __func__);
         } else {
-            PRINT("REMOVE Spent %d ms.\n", rspent);
+            PRINT_RAW("REMOVE Spent %d ms.\n", rspent);
         }
     }
 
@@ -836,10 +964,10 @@ int main(int argc, char *argv[])
         } while(0);
         tspent = tm_stopwatch(ttimer);
 
-        PRINT("OPEN   Spent %d ms.\n", ospent);
-        PRINT("WRITE  Spent %d ms.\n", wspent);
-        PRINT("CLOSE  Spent %d ms.\n", cspent);
-        PRINT("TOTAL  Spent %d ms.\n", tspent);
+        PRINT_RAW("OPEN   Spent %d ms.\n", ospent);
+        PRINT_RAW("WRITE  Spent %d ms.\n", wspent);
+        PRINT_RAW("CLOSE  Spent %d ms.\n", cspent);
+        PRINT_RAW("TOTAL  Spent %d ms.\n", tspent);
     }
 
     if (cycle_flag) {
@@ -888,25 +1016,120 @@ int main(int argc, char *argv[])
             }
 
             PRINT(" ---------------- [ %6s ] ----------------\n", "RESULT");
-            PRINT("OPEN   Spent %d ms.\n", ospent);
-            PRINT("WRITE  Spent %d ms.\n", wspent);
-            PRINT("CLOSE  Spent %d ms.\n", cspent);
-            PRINT("REMOVE Spent %d ms.\n", rspent);
+            PRINT_RAW("OPEN   Spent %d ms.\n", ospent);
+            PRINT_RAW("WRITE  Spent %d ms.\n", wspent);
+            PRINT_RAW("CLOSE  Spent %d ms.\n", cspent);
+            PRINT_RAW("REMOVE Spent %d ms.\n", rspent);
 
         } while(--cycle);
 
         tspent = tm_stopwatch(ttimer);
         PRINT(" ---------------- [ CONCULTION ] ----------------\n");
-        PRINT("TOTAL Cycle %d times.\n", cycle_count);
-        PRINT("TOTAL Spent %d ms.\n", tspent);
+        PRINT_RAW("TOTAL Cycle %d times.\n", cycle_count);
+        PRINT_RAW("TOTAL Spent %d ms.\n", tspent);
     }
 
     if (read_flag) {
-        myfs_show_log_example(fs, file_name);
+        test_show_file(fs);
+    }
+
+    if (get_file_flag) {
+
+        unsigned int ospent = 0;
+        unsigned int gspent = 0;
+        unsigned int cspent = 0;
+
+        Timer ttimer;
+        unsigned int tspent = 0;
+
+        tm_set_ms(&ttimer, 0);
+        do {
+
+            FILE *fd = fopen(get_file_path, "wb");
+            if (!fd) {
+                PRINT_ERR("%s() fopen failed : %s\n", __func__, strerror(errno));
+                return -1;
+            }
+
+            ospent = test_open(fs);
+            if (ospent < 0) {
+                PRINT_ERR("%s() test open failed.\n", __func__);
+                break;
+            }
+
+            gspent = test_copy_from_fs(fs, fd);
+            if (gspent < 0) {
+                PRINT_ERR("%s() test write failed.\n", __func__);
+            }
+
+            cspent = test_close(fs);
+            if (cspent < 0) {
+                PRINT_ERR("%s() test close failed.\n", __func__);
+                break;
+            }
+
+            fclose(fd);
+
+        } while(0);
+        tspent = tm_stopwatch(ttimer);
+
+        PRINT_RAW("OPEN   Spent %d ms.\n", ospent);
+        PRINT_RAW("GET    Spent %d ms.\n", gspent);
+        PRINT_RAW("CLOSE  Spent %d ms.\n", cspent);
+        PRINT_RAW("TOTAL  Spent %d ms.\n", tspent);
+    }
+
+    if (put_file_flag) {
+
+        unsigned int ospent = 0;
+        unsigned int pspent = 0;
+        unsigned int cspent = 0;
+
+        Timer ttimer;
+        unsigned int tspent = 0;
+
+        tm_set_ms(&ttimer, 0);
+        do {
+
+            FILE *fd = fopen(put_file_path, "r");
+            if (!fd) {
+                PRINT_ERR("fopen failed : %s\n", strerror(errno));
+                break;
+            }
+
+            ospent = test_open(fs);
+            if (ospent < 0) {
+                PRINT_ERR("%s() test open failed.\n", __func__);
+                break;
+            }
+
+            pspent = test_copy_to_fs(fs, fd);
+            if (pspent < 0) {
+                PRINT_ERR("%s() test write failed.\n", __func__);
+            }
+
+            cspent = test_close(fs);
+            if (cspent < 0) {
+                PRINT_ERR("%s() test close failed.\n", __func__);
+                break;
+            }
+
+            fclose(fd);
+
+        } while(0);
+        tspent = tm_stopwatch(ttimer);
+
+        PRINT_RAW("OPEN   Spent %d ms.\n", ospent);
+        PRINT_RAW("PUT    Spent %d ms.\n", pspent);
+        PRINT_RAW("CLOSE  Spent %d ms.\n", cspent);
+        PRINT_RAW("TOTAL  Spent %d ms.\n", tspent);
+
     }
 
     if (list_flag) {
-        myfs_dirlist_example(fs, list_path);
+        PRINT_RAW("--------\nPATH : %s\n", list_path);
+        test_list_all(fs, list_path, 0);
+        PRINT_RAW("--------\n\n");
     }
 
     if (dump_flag & 0x01) {
@@ -919,6 +1142,9 @@ int main(int argc, char *argv[])
         test_dump_info(fs);
     }
 
+    Timer utimer;
+    unsigned int uspent = 0;
+    tm_set_ms(&utimer, 0);
     if (type == MYFS_LITTLEFS) {
         lfs_uninit(&fs);
     } else if (type == MYFS_FATFS) {
@@ -927,6 +1153,8 @@ int main(int argc, char *argv[])
         PRINT_ERR("Unknown type.\n");
         exit(EXIT_FAILURE);
     }
+    uspent = tm_stopwatch(utimer);
+    PRINT_RAW("UNINIT Spent %d ms.\n", uspent);
 
     return 0;
 }

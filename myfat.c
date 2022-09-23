@@ -6,6 +6,10 @@
 #include "misc.h"
 #include "myfat.h"
 
+#ifdef GGR_FATFS
+#include "ggr_fatfs_diskio.h"
+#endif
+
 static Timer myfat_timer;
 static myfat_dev *head;
 
@@ -17,7 +21,9 @@ static myfat_dev *head;
 DWORD get_fattime(void)
 {
     tm_from_sys(&myfat_timer);
-    return (1000000 * myfat_timer.tv_sec) + (myfat_timer.tv_nsec / 1000) ;
+    DWORD fattime;
+    tm_to_fattime(&myfat_timer, &fattime);
+    return fattime;
 }
 
 myfat_dev *find_fat_by_id(BYTE id)
@@ -50,7 +56,11 @@ DSTATUS fat_disk_init(BYTE pdrv)
         return RES_PARERR;
     }
 
+#ifdef GGR_FATFS
+    return ggr_fatfs_initialize(pdrv);
+#else
     return RES_OK;
+#endif
 }
 
 /**
@@ -65,9 +75,21 @@ DSTATUS fat_disk_status(BYTE pdrv)
         return RES_PARERR;
     }
 
+#ifdef GGR_FATFS
+    return ggr_fatfs_status(pdrv);
+#else
     return RES_OK;
+#endif
 }
 
+static int fat_block_sector_amount(vflash *flash)
+{
+    return (flash->block_size(flash) / _MAX_SS);
+}
+static int fat_block_first_sector(vflash *flash, int block)
+{
+    return (flash->block_size(flash) * block) / _MAX_SS;
+}
 static int fat_sector_to_block(vflash *flash, DWORD sector)
 {
     unsigned long sec_per_blk = flash->block_size(flash) / _MAX_SS;
@@ -109,39 +131,98 @@ static int fat_over_write_detect(vflash *flash, DWORD sector)
 
     return 0;
 }
-static int fat_erase_sector(vflash *flash, DWORD sector)
+static int fat_erase_sector(vflash *flash, DWORD sector, int count)
 {
+    if (!flash || !count) {
+        PRINT_ERR("%s() invalid args.\n", __func__);
+        return -1;
+    } else if ((sector + count) > (flash->size(flash) / _MAX_SS)) {
+        PRINT_ERR("%s() invalid sector.\n", __func__);
+        return -1;
+    }
+
     int blk_size = flash->block_size(flash);
     unsigned char *block_buff = (unsigned char *)malloc(blk_size);
     if (!block_buff) {
         PRINT_ERR("%s() malloc failed : %s.\n", __func__, strerror(errno));
         return -1;
     }
-
     memset(block_buff, 0, blk_size);
 
-    int blk = fat_sector_to_block(flash, sector);
-    int pag = fat_sector_to_page(flash, sector);
+    // | first part  |       middle part         |  last part   |
+    // | <- block -> | <- block -> | <- block -> | <- block ->  |
+    //         □□□□□□|□□□□□□□□□□□□□|□□□□□□□□□□□□□|□□□□□□ 
+    //  ■■■■■■■                                         ■■■■■■■■
+    //  ^(write back sector)                            ^(write back sector)
 
-    vblock *block = flash->get_block(flash, blk);
+    int sector_per_block = flash->block_size(flash) / _MAX_SS;
 
-    if (block->read(block, 0, block_buff, blk_size)) {
-        PRINT_ERR("%s() read failed.\n", __func__);
-        free(block_buff);
-        return -1;
+    // first part
+    //
+    // | <- block -> |
+    // |□□□□□□□□□□□□□| <- erase block
+    //  ■■■■■■   ■■■■  < count = 3
+    //  ■■■■■■         < count > sector per block
+    //         ■■■■■■  < count > sector per block
+    //
+    while (count) {
+
+        int blk = fat_sector_to_block(flash, sector);
+        vblock *block = flash->get_block(flash, blk);
+        if (!block) {
+            PRINT_ERR("%s() flash get block %d failed.\n", __func__, blk);
+            return -1;
+        } else if (block->read(block, 0, block_buff, blk_size)) {
+            PRINT_ERR("%s() block %d read failed.\n", __func__, blk);
+            free(block_buff);
+            return -1;
+        } else if (block->erase(block)) {
+            PRINT_ERR("%s() block %d erase failed.\n", __func__, blk);
+            free(block_buff);
+            return -1;
+        }
+
+        int fsector = fat_block_first_sector(flash, blk);
+        int bsector = sector % sector_per_block;
+        int bcount = sector_per_block - bsector;
+        if (count < bcount) {
+            bcount = count;
+        }
+
+#ifdef STEP_BY_STEP
+        PRINT("FAT BLOCK %d ERASE SECTOR [%ld - %ld] [%ld - %ld] [%ld - %ld].\n", blk, fsector, bsector, bsector, bsector + bcount, bsector + bcount, sector_per_block);
+#endif
+
+        if (bsector) {
+            int wsize = bsector * _MAX_SS;
+            if (block->write(block, 0, block_buff, wsize)) {
+                PRINT_ERR("%s() block %d write 0 ~ %d failed.\n", __func__, blk, wsize);
+                free(block_buff);
+                return -1;
+            }
+#ifdef STEP_BY_STEP
+            PRINT("FAT BLOCK %d WRITE BACK FRONT [%ld - %ld] OK.\n", blk, fsector, bsector);
+#endif
+        }
+
+        if ((bsector + bcount) % sector_per_block) {
+            int woff = (bsector + bcount) * _MAX_SS;
+            int wsize = (sector_per_block - (bsector + bcount)) * _MAX_SS;
+            if (block->write(block, woff, block_buff + woff, wsize)) {
+                PRINT_ERR("%s() block %d write %d ~ %d failed.\n", __func__, blk, woff, wsize);
+                free(block_buff);
+                return -1;
+            }
+#ifdef STEP_BY_STEP
+            PRINT("FAT BLOCK %d WRITE BACK END [%ld - %ld] OK.\n", blk, bsector + bcount, sector_per_block);
+#endif
+        }
+
+        count -= bcount;
+        sector += bcount;
+
+        flash->fblock_update(flash, blk, 0, flash->block_size(flash));
     }
-
-    block->erase(block);
-
-    // write back above sector data
-    int byte_off = (pag * flash->page_size(flash)) + fat_sector_to_page_off(flash, sector);
-    block->write(block, 0, block_buff, byte_off);
-    flash->fblock_update(flash, blk, 0, byte_off);
-
-    // write back after sector data
-    byte_off += _MAX_SS;
-    block->write(block, byte_off, block_buff + byte_off, blk_size - byte_off);
-    flash->fblock_update(flash, blk, byte_off, blk_size - byte_off);
 
     free(block_buff);
 
@@ -163,21 +244,14 @@ DRESULT fat_disk_read(BYTE pdrv, BYTE *buff, DWORD sector, UINT count)
         return RES_PARERR;
     }
 
-    // sector to block
-    for (int sec = sector; sec < (sector + count); ++sec) {
+#ifdef STEP_BY_STEP
+    PRINT("[FAT DISK READ] sector %ld , count %d.\n", sector, count);
+#endif
 
-        int blk = fat_sector_to_block(dev->flash, sec);
-        vblock *rblock = dev->flash->get_block(dev->flash, blk);
-
-        int pag = fat_sector_to_page(dev->flash, sec);
-        vpage *rpage = rblock->get_page(rblock, pag);
-
-        int off = fat_sector_to_page_off(dev->flash, sec);
-
-        if (rpage->read(rpage, off, buff + ((sec - sector) * _MAX_SS), _MAX_SS)) {
-            PRINT_ERR("%s() fat %d : page read failed blk %d , pag %d.\n", __func__, dev->id, blk, pag);
-            return RES_ERROR;
-        }
+    vflash *flash = dev->flash;
+    if (flash->read(flash, sector * _MAX_SS, count * _MAX_SS, buff)) {
+        PRINT_ERR("%s() flash read addr %ld , size %d.\n", __func__, sector * _MAX_SS, count * _MAX_SS);
+        return RES_ERROR;
     }
 
     dev->read_cnt++;
@@ -207,42 +281,22 @@ DRESULT fat_disk_write (BYTE pdrv, const BYTE *buff, DWORD sector, UINT count)
 
     vflash *flash = dev->flash;
 
-    // sector to block
-    for (int sec = sector; sec < (sector + count); ++sec) {
-
-        int blk = fat_sector_to_block(flash, sec);
-        vblock *wblock = flash->get_block(flash, blk);
-
-        int pag = fat_sector_to_page(flash, sec);
-        vpage *wpage = wblock->get_page(wblock, pag);
-
-        int off = fat_sector_to_page_off(flash, sec);
-
-        if (fat_over_write_detect(flash, sector)) {
-            PRINT("fat detect sector %ld over write.\n", sector);
-            if (fat_erase_sector(flash, sector)) {
-                PRINT_ERR("%s() fat erase sector %ld failed.\n", __func__, sector);
-                return RES_ERROR;
-            }
-        }
-
-        const BYTE *buff_off = buff + ((sec - sector) * _MAX_SS);
-
+    if (fat_over_write_detect(flash, sector)) {
 #ifdef STEP_BY_STEP
-        PRINT("[WRITE] [blk %d] [pag %d] [off %d] [sec size %d] [buff off : %ld]\n", blk, pag, off, _MAX_SS, buff_off - buff);
+        PRINT("[FAT DISK WRITE] detect sector %ld over write.\n", sector);
 #endif
-
-        if (wpage->write(wpage, off, buff_off, _MAX_SS)) {
-            PRINT_ERR("%s() fat %d : page write failed blk %d , pag %d.\n", __func__, dev->id, blk, pag);
+        if (fat_erase_sector(flash, sector, 1)) {
+            PRINT_ERR("%s() fat erase sector %ld failed.\n", __func__, sector);
             return RES_ERROR;
         }
-
-        int blk_off = fat_sector_to_block_off(flash, sec);
-#ifdef STEP_BY_STEP
-        PRINT("[UPDATE] [blk %d] [off %d] [size %d]\n", blk, blk_off, _MAX_SS);
-#endif
-        flash->fblock_update(flash, blk, blk_off, _MAX_SS);
     }
+
+    if (flash->write(flash, sector * _MAX_SS, count * _MAX_SS, buff)) {
+        PRINT_ERR("%s() flash write addr %ld , size %d.\n", __func__, sector * _MAX_SS, count * _MAX_SS);
+        return RES_ERROR;
+    }
+
+    flash->fupdate(flash, sector * _MAX_SS, count * _MAX_SS);
 
     dev->prog_cnt++;
 
@@ -271,6 +325,18 @@ DRESULT fat_disk_ioctl (BYTE pdrv, BYTE cmd, void *buff)
         *(DWORD *)buff = dev->flash->size(dev->flash) / _MAX_SS;
     } else if (cmd == GET_BLOCK_SIZE) {
         *(DWORD *)buff = dev->flash->block_size(dev->flash);
+#if _USE_TRIM == 1
+    } else if (cmd == CTRL_TRIM) {
+
+        DWORD *dw_point = buff;
+        DWORD start = dw_point[0];
+        DWORD end = dw_point[1];
+
+#ifdef STEP_BY_STEP
+        PRINT("%s() ERASE SECTOR %ld - %ld.\n", __func__, start, end);
+#endif
+        fat_erase_sector(dev->flash, start, end - start + 1);
+#endif
     }
 
     return RES_OK;
@@ -321,7 +387,7 @@ int myfat_dev_init(myfat_dev *dev, int blk, int pag, int unit)
 
     dev->config = (Diskio_drvTypeDef *)malloc(sizeof(Diskio_drvTypeDef));
     if (!dev->config) {
-        PRINT("malloc failed : %s\n", strerror(errno));
+        PRINT_ERR("%s() malloc failed : %s\n", __func__, strerror(errno));
         dev->destroy(dev);
         return -1;
     }
@@ -375,16 +441,16 @@ int myfat_dev_init(myfat_dev *dev, int blk, int pag, int unit)
 
     dev->clus_size = 0x800;
 
-    PRINT("fat %d : flash size : %d byte\n", dev->id, dev->flash->size(dev->flash));
-    PRINT("fat %d : flash size : %d byte\n", dev->id, dev->flash->size(dev->flash));
-    PRINT("fat %d : block size : %d byte , %d block/flash\n", dev->id, dev->flash->block_size(dev->flash), dev->flash->vblock_amt);
-    PRINT("fat %d : page  size : %d byte , %d page/block\n", dev->id, dev->flash->page_size(dev->flash), dev->flash->vpage_amt);
-    PRINT("fat %d : cluster size %d byte\n", dev->id, dev->clus_size);
-    PRINT("fat %d : sector size %d byte\n", dev->id, _MAX_SS);
 
-    PRINT("fat %d : %d cluster/flash\n", dev->id, dev->flash->size(dev->flash) / dev->clus_size);
-    PRINT("fat %d : %d sector/cluster\n", dev->id, dev->clus_size / _MAX_SS);
-    PRINT("fat %d : %d sector/flash\n", dev->id, dev->flash->size(dev->flash) / _MAX_SS);
+    PRINT_RAW("fat %d : flash ( %d bytes ) , block ( %d bytes ) , page ( %d bytes ) , unit ( %ld bytes ).\n",
+              dev->id, dev->flash->size(dev->flash), dev->flash->block_size(dev->flash), dev->flash->page_size(dev->flash), sizeof(VUNIT_TYPE));
+
+    PRINT_RAW("fat %d : %ld bytes / %d units / %d pages / %d blocks / flash.\n",
+              dev->id, sizeof(VUNIT_TYPE), dev->flash->vunit_amt, dev->flash->vpage_amt, dev->flash->vblock_amt);
+
+    PRINT_RAW("fat %d : cluster ( %d bytes ) , sector ( %d bytes ).\n", dev->id, dev->clus_size, _MAX_SS);
+    PRINT_RAW("fat %d : %d (sector/cluster) , %d (sector/page) , %d (sector/block) , %d (sector/flash).\n",
+              dev->id, _MAX_SS/dev->clus_size, _MAX_SS/dev->flash->page_size(dev->flash), _MAX_SS/dev->flash->block_size(dev->flash), _MAX_SS/dev->flash->size(dev->flash));
 
     dev->save(dev, file_name);
 
@@ -565,7 +631,7 @@ int myfat_format(myfat *fat, int dev_id)
     }
     
     unsigned char work_buff[2048] = {0};
-    FRESULT res = f_mkfs(dev->path, FM_FAT, dev->clus_size, work_buff, 2048);
+    FRESULT res = f_mkfs(dev->path, FM_ANY, dev->clus_size, work_buff, 2048);
     if(res != FR_OK) {
         PRINT_ERR("%s() fat %d : f_mkfs() failed, res = %d\n", __func__, dev->id, res);
         return -1;
@@ -586,7 +652,7 @@ int myfat_mount(myfat *fat, int dev_id)
         return -1;
     }
 
-    FRESULT res = f_mount(&(dev->core), dev->path, 0);
+    FRESULT res = f_mount(&(dev->core), "", 0);
     if(res != FR_OK) {
         PRINT_ERR("%s() fat %d : f_mount() failed, res = %d\n", __func__, dev->id, res);
         return -1;

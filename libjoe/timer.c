@@ -232,3 +232,22 @@ int tm_is_exprid(Timer tmr)
 
     return 0;
 }
+
+int tm_to_fattime(Timer *tmr, unsigned long *fattime)
+{
+    if (!tmr || !fattime) {
+        return -1;
+    }
+
+    struct tm tmp = {0};
+    gmtime_r(&(tmr->tv_sec), &tmp);
+
+    *fattime = (tmp.tm_year - 80) << 25;
+    *fattime |= (tmp.tm_mon + 1) << 21;
+    *fattime |= (tmp.tm_mday) << 16;
+    *fattime |= (tmp.tm_hour) << 11;
+    *fattime |= (tmp.tm_min) << 5;
+    *fattime |= (tmp.tm_sec) >> 1;
+
+    return 0;
+}

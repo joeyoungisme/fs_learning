@@ -252,9 +252,11 @@ int mylfs_dev_init(mylfs_dev *dev, int blk, int pag, int uni)
     dev->config.lookahead_size = flash->page_size(flash);
     dev->config.block_cycles = flash->page_size(flash);
 
-    PRINT("lfs %d : flash size : %d byte\n", dev->id, dev->flash->size(dev->flash));
-    PRINT("lfs %d : block size : %d byte , %d block/flash\n", dev->id, dev->flash->block_size(dev->flash), dev->flash->vblock_amt);
-    PRINT("lfs %d : page  size : %d byte , %d page/block\n", dev->id, dev->flash->page_size(dev->flash), dev->flash->vpage_amt);
+    PRINT_RAW("lfs %d : flash ( %d bytes ) , block ( %d bytes ) , page ( %d bytes ) , unit ( %ld bytes ).\n",
+              dev->id, dev->flash->size(dev->flash), dev->flash->block_size(dev->flash), dev->flash->page_size(dev->flash), sizeof(VUNIT_TYPE));
+
+    PRINT_RAW("lfs %d : %ld bytes / %d units / %d pages / %d blocks / flash.\n",
+              dev->id, sizeof(VUNIT_TYPE), dev->flash->vunit_amt, dev->flash->vpage_amt, dev->flash->vblock_amt);
 
     dev->save(dev, file_name);
 

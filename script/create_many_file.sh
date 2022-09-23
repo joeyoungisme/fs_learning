@@ -6,7 +6,7 @@ if [ -z "$1" ] || [ "$1" != "fat" ] && [ "$1" != "lfs" ]; then
 fi
 
 create_1() {
-    WRITE_COUNT=10
+    WRITE_COUNT=3000
     # SYNC_TIMES=$(($WRITE_COUNT / 3))
     SYNC_TIMES=$(($WRITE_COUNT / 3))
     ../main --type $1 --file  WW00.txt --sync $SYNC_TIMES --wcnt $WRITE_COUNT --w 'WW00.txt : 0000000000000000000000000000000000000000000000000000000000000000000000 '

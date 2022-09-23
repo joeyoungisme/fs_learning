@@ -22,5 +22,6 @@ int tm_from_sys(Timer *tmr);
 
 int tm_to_str(Timer *tmr, char *str, int len);
 int tm_from_str(Timer *tmr, char *str);
+int tm_to_fattime(Timer *tmr, unsigned long *fattime);
 
 #endif

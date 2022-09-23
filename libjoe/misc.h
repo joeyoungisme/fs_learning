@@ -7,12 +7,12 @@
 
 #define BIT_MASK(x)             ((0x01) << x)
 
+#define VA_ARGS(...)     , ##__VA_ARGS__
+
 #ifdef DEBUG_FLAG
 
 #include <time.h>
 #include <syslog.h>
-
-#define VA_ARGS(...)     , ##__VA_ARGS__
 
 #define PRINT(fmt, ...) \
     do { printf("["__FILE__"] [LINE %d] "fmt, __LINE__ VA_ARGS(__VA_ARGS__)); } while(0)
@@ -25,16 +25,19 @@
 
 #define PRINT_ERR(fmt, ...) \
     do { printf("[ERROR] ["__FILE__"] [LINE %d] "fmt, __LINE__ VA_ARGS(__VA_ARGS__)); } while(0)
-// do { syslog(LOG_ERR, "["__FILE__"] VA_ARGS(__VA_ARGS__); } while(0)
 
 #define PRINT_DEBUG(fmt, ...) \
     do { printf("[DEBUG] ["__FILE__"] [LINE %d] "fmt, __LINE__ VA_ARGS(__VA_ARGS__)); } while(0)
+
 #else
 
 #define PRINT(...)
-#define PRINT_RAW(...)
-#define PRINT_ERR(...)
+#define PRINT_RAW(...) \
+    do { printf(__VA_ARGS__); } while(0)
+#define PRINT_ERR(fmt, ...) \
+    do { printf("[ERROR] ["__FILE__"] [LINE %d] "fmt, __LINE__ VA_ARGS(__VA_ARGS__)); } while(0)
 #define PRINT_DEBUG(...)
+
 #endif
 
 /*
